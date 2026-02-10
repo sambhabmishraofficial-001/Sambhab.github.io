@@ -173,9 +173,12 @@ nav li a:hover {
 
 /* Content Sections */
 .content-section {
-    max-width: 800px;
-    margin: 3rem auto;
-    padding: 0 1.5rem;
+    max-width: 700px;
+    /* Reduced from 800px */
+    margin: 4rem auto;
+    /* Increased margin */
+    padding: 0 2rem;
+    /* Increased padding */
     text-align: left;
     color: #2c3e50;
     pointer-events: auto;
@@ -271,4 +274,151 @@ body.subpage {
     padding-top: 100px;
     /* Space for the initial centered text to look good */
     padding-bottom: 50px;
+}
+
+/* Man Utd Button */
+.btn-manutd {
+    border-color: #DA291C;
+    color: #DA291C;
+}
+
+.btn-manutd:hover {
+    background: #DA291C;
+    color: #ffffff;
+    box-shadow: 0 6px 15px rgba(218, 41, 28, 0.3);
+}
+
+/* Achievements Layout */
+.achievements-layout {
+    display: flex;
+    flex-wrap: wrap;
+    /* Stack on mobile */
+    gap: 2rem;
+    align-items: flex-start;
+    max-width: 1200px;
+    /* Wider container */
+}
+
+.achievements-text {
+    flex: 1;
+    /* Less flexible space, more fixed */
+    min-width: 300px;
+}
+
+.achievements-image-container {
+    flex: 2;
+    /* More space for images */
+    display: flex;
+    /* Flex container for images */
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.image-wrapper {
+    flex: 1;
+    min-width: 180px;
+    /* Reduced to ensure they fit side-by-side */
+    max-width: 100%;
+    text-align: center;
+}
+
+.achievements-image-container img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    margin-bottom: 0.5rem;
+}
+
+.photo-caption {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 0.25rem;
+}
+
+.source-link {
+    font-size: 0.9rem;
+    color: #555;
+    margin-top: 0;
+}
+
+.source-link a {
+    color: #DA291C;
+    /* Match theme or link color */
+    text-decoration: none;
+}
+
+.source-link a:hover {
+    text-decoration: underline;
+}
+
+/* Dictionary / Gallery Styles */
+.text-center {
+    text-align: center;
+}
+
+.gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.gallery-item {
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+}
+
+.gallery-item:hover {
+    transform: translateY(-5px);
+}
+
+.gallery-item img {
+    width: 100%;
+    height: auto;
+    /* Maintain aspect ratio */
+    display: block;
+    position: relative;
+    z-index: 2;
+    /* Image on top */
+}
+
+/* Specific style for the 3rd item (Stadium) to have the logo behind */
+/* Specific style for the 3rd item (Stadium) to have the logo behind */
+/* Specific style for the 3rd item (Stadium) to have the logo on the side */
+.gallery-item:nth-child(3) {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: #fff;
+    /* Remove previous background image styles */
+    background-image: none;
+}
+
+/* Style for the photo in the 3rd item */
+.gallery-item:nth-child(3) .photo {
+    flex: 2;
+    /* Photo takes up more space */
+    width: auto;
+    max-width: 70%;
+    z-index: 1;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Style for the logo in the 3rd item */
+.gallery-item:nth-child(3) .logo {
+    flex: 1;
+    /* Logo takes less space */
+    width: auto;
+    max-width: 30%;
+    height: auto;
+    object-fit: contain;
+    z-index: 0;
 }
