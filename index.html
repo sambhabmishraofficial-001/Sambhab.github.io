@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sambhab Mishra</title>
+    <meta name="description" content="Personal website of Sambhab Mishra">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+
+<body>
+    <!-- Background Canvas (Otoro) -->
+    <canvas id="canvas-bg"></canvas>
+
+    <!-- Intro Canvas (Tetris) -->
+    <canvas id="canvas-intro"></canvas>
+
+    <div id="main" style="opacity: 0; transition: opacity 2s;">
+        <h1>Hi, I'm Sambhab Mishra (ସମ୍ଭବ ମିଶ୍ର). Welcome to my personal website.</h1>
+        <p>Student researcher</p>
+        <br>
+        <br>
+        <nav>
+            <ul>
+                <li><a href="https://en.wikipedia.org/wiki/Sambhab_Mishra" target="_blank">Wikipedia</a></li>
+                <li><a href="https://x.com/Sambhab_Mishra" target="_blank">X</a></li>
+                <li><a href="https://linkedin.com/in/sambhab-mishra-ସମ୍ଭବ-ମିଶ୍ର-4149431b5/" target="_blank">LinkedIn</a>
+                </li>
+                <li><a href="mailto:Sambhabmishraofficial@gmail.com">Email</a></li>
+            </ul>
+        </nav>
+
+        <div class="menu-container">
+            <a href="research.html" class="menu-btn">Research & Experience</a>
+            <a href="achievements.html" class="menu-btn">Patents & Achievements</a>
+            <a href="skills.html" class="menu-btn">Skills & Interests</a>
+        </div>
+    </div>
+
+    <!-- Load Scripts -->
+    <script src="otoro-effect.js"></script>
+    <script src="tetris-sam.js"></script>
+
+    <!-- Sequence Manager -->
+    <script>
+        window.onload = function () {
+            // Check if we've visited before in this session
+            const hasVisited = sessionStorage.getItem('introPlayed');
+            const introCanvas = document.getElementById('canvas-intro');
+            const mainContent = document.getElementById('main');
+
+            if (!hasVisited && introCanvas) {
+                // First visit: Play Tetris Intro
+                startTetrisIntro(function () {
+                    // Intro Finish Callback
+                    if (introCanvas) {
+                        introCanvas.style.transition = 'opacity 1s';
+                        introCanvas.style.opacity = 0;
+
+                        setTimeout(() => {
+                            introCanvas.style.display = 'none';
+                            if (window.startOtoro) startOtoro();
+                            if (mainContent) mainContent.style.opacity = 1;
+                            // Mark as visited
+                            sessionStorage.setItem('introPlayed', 'true');
+                        }, 1000);
+                    }
+                });
+            } else {
+                // Subsequent visit: Skip Intro
+                if (introCanvas) introCanvas.style.display = 'none'; // Hide immediately
+                if (window.startOtoro) startOtoro(); // Start background immediately
+                if (mainContent) mainContent.style.opacity = 1; // Show content immediately
+            }
+        };
+    </script>
+    <!-- Google Analytics placeholder similar to original if needed, skipping for now -->
+</body>
+
+</html>

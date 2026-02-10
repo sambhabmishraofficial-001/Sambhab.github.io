@@ -1,0 +1,274 @@
+:root {
+    --text-color: #333;
+    --link-color: #333;
+    /* Links are subtle until hover perhaps? Original is greyish */
+    --bg-color: #ffffff;
+    /* White */
+    --font-family: 'Source Sans 3', 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family);
+    color: var(--text-color);
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    /* Prevent scroll */
+    position: relative;
+    background-color: var(--bg-color);
+    /* Mobile-first adjustment */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Canvas Background (Otoro) */
+#canvas-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+}
+
+/* Intro Canvas (Tetris) */
+#canvas-intro {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    /* On top of content initially */
+    pointer-events: none;
+}
+
+/* Centered Content */
+#main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    text-align: center;
+    background: transparent;
+    pointer-events: none;
+    /* Let clicks pass through to canvas if needed, but links need pointer-events: auto */
+}
+
+#main h1 {
+    font-weight: 300;
+    font-size: 2.2rem;
+    /* Reduced size */
+    margin-bottom: 1rem;
+    letter-spacing: -1px;
+    color: #2c3e50;
+}
+
+#main p {
+    font-weight: 300;
+    font-size: 1.2rem;
+    color: #7f8c8d;
+    margin-bottom: 0.5rem;
+}
+
+#main a {
+    color: #42b983;
+    /* Vue green or a similar accent */
+    text-decoration: none;
+    font-weight: 400;
+    pointer-events: auto;
+    transition: color 0.2s ease;
+}
+
+#main a:hover {
+    color: #3aa876;
+}
+
+/* Nav links styling */
+nav {
+    margin-top: 2rem;
+    pointer-events: auto;
+}
+
+nav ul {
+    list-style: none;
+    display: flex;
+    gap: 1.5rem;
+}
+
+nav li a {
+    color: #7f8c8d !important;
+    /* Override the green for these secondary links */
+    font-size: 1rem;
+    position: relative;
+}
+
+nav li a:hover {
+    color: #2c3e50 !important;
+}
+
+@media (max-width: 600px) {
+    #main h1 {
+        font-size: 1.8rem;
+    }
+
+    #main p {
+        font-size: 1rem;
+        padding: 0 1rem;
+    }
+
+    nav ul {
+        flex-direction: row;
+        /* Keep row even on mobile usually, or wrap */
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
+
+/* Menu Buttons on Index */
+.menu-container {
+    margin-top: 3rem;
+    display: flex;
+    flex-direction: column;
+    /* Stack them for better separation */
+    align-items: center;
+    gap: 1.5rem;
+    pointer-events: auto;
+}
+
+.menu-btn {
+    text-decoration: none;
+    color: #2c3e50;
+    border: 2px solid #2c3e50;
+    /* Thicker border */
+    padding: 1rem 3rem;
+    /* Wider padding */
+    border-radius: 50px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.4);
+    transition: all 0.3s ease;
+    width: 300px;
+    /* Fixed width for uniformity */
+    display: inline-block;
+    /* Ensure width is respected */
+}
+
+.menu-btn:hover {
+    background: #2c3e50;
+    color: #fff;
+    transform: translateY(-3px);
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+}
+
+/* Content Sections */
+.content-section {
+    max-width: 800px;
+    margin: 3rem auto;
+    padding: 0 1.5rem;
+    text-align: left;
+    color: #2c3e50;
+    pointer-events: auto;
+    /* Allow text selection */
+}
+
+.text-left {
+    text-align: left;
+}
+
+.content-section h2 {
+    font-weight: 400;
+    font-size: 1.8rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    padding-bottom: 0.5rem;
+    margin-top: 2rem;
+}
+
+.project-item {
+    margin-bottom: 2rem;
+}
+
+.project-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.project-header h3 {
+    font-weight: 600;
+    font-size: 1.2rem;
+    margin: 0;
+    color: #2c3e50;
+}
+
+.project-header .date {
+    font-size: 0.9rem;
+    color: #7f8c8d;
+    font-style: italic;
+}
+
+.content-section ul {
+    list-style-type: disc;
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.content-section li {
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+    font-size: 1rem;
+    font-weight: 300;
+}
+
+.content-section p {
+    font-weight: 300;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    color: #34495e;
+}
+
+hr {
+    border: 0;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.1);
+    margin: 2rem 0;
+}
+
+/* Scrollable container if needed, but body overflow is hidden? 
+   We need to allow scrolling now that content is long. 
+*/
+body {
+    overflow-y: auto !important;
+    /* Enable scroll */
+}
+
+/* Subpage Styling */
+body.subpage {
+    overflow-y: auto;
+    background-color: #ffffff;
+    /* White background */
+}
+
+/* Adjust main container to flow naturally */
+#main {
+    height: auto;
+    min-height: 100vh;
+    justify-content: flex-start;
+    padding-top: 100px;
+    /* Space for the initial centered text to look good */
+    padding-bottom: 50px;
+}
