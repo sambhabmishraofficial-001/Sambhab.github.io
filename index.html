@@ -7,32 +7,42 @@
     <title>Sambhab Mishra</title>
     <meta name="description" content="Personal website of Sambhab Mishra">
     <link rel="stylesheet" href="style.css">
+    <script>try { if (localStorage.getItem('theme') === 'night') document.documentElement.classList.add('night'); } catch (e) {}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 
 
-<body>
-    <!-- Background Canvas (Otoro) -->
-    <canvas id="canvas-bg"></canvas>
+<body class="home">
+    <!-- Background Animation (a small light, room by room) -->
+    <canvas id="bg-houses" aria-label="an isometric block of printed rooms"></canvas>
+    <canvas id="bg-sky" aria-hidden="true"></canvas>
+    <canvas id="bg-meadow" aria-hidden="true"></canvas>
 
-    <!-- Intro Canvas (Tetris) -->
-    <canvas id="canvas-intro"></canvas>
-
-    <div id="main" style="opacity: 0; transition: opacity 2s;">
-        <h1>Hi, I'm Sambhab Mishra (ସମ୍ଭବ ମିଶ୍ର). Welcome to my personal website.</h1>
-        <p>Student researcher | Co-founder of <a href="https://neev.bio" target="_blank"
-                style="color: inherit;">Neev.bio</a></p>
+    <div id="main" style="opacity: 0; transition: opacity 1s;">
+        <div class="hero-card">
+        <h1 class="intro" aria-label="Hello! I'm Sambhab Mishra, a researcher, artist, author and entrepreneur">
+            <span aria-hidden="true">Hello! I'm <span class="tag"><span class="tag-stack"><span class="tag-sheet"></span><span class="tag-sheet"></span><span class="tag-face">Sambhab Mishra</span></span></span> and <span class="nowrap">I'm a/an <span class="tag"><span class="tag-stack"><span class="tag-sheet"></span><span class="tag-sheet"></span><span class="tag-face"><span id="intro-role">researcher</span><span class="caret"></span></span></span></span></span></span>
+        </h1>
+        <p>Undergrad @ UCL | Student researcher | Co-founder of <a href="https://newhorizon.dev" target="_blank"
+                style="color: inherit;">Newhorizon.dev</a></p>
         <br>
         <br>
-        <nav>
-            <ul>
-                <li><a href="https://en.wikipedia.org/wiki/Sambhab_Mishra" target="_blank">Wikipedia</a></li>
-                <li><a href="https://x.com/Sambhab_Mishra" target="_blank">X</a></li>
-                <li><a href="https://linkedin.com/in/sambhab-mishra-ସମ୍ଭବ-ମିଶ୍ର-4149431b5/" target="_blank">LinkedIn</a>
-                </li>
-                <li><a href="mailto:Sambhabmishraofficial@gmail.com">Email</a></li>
+        <nav aria-label="Profiles">
+            <ul class="socials">
+                <li><a class="social" href="https://en.wikipedia.org/wiki/Sambhab_Mishra" target="_blank" aria-label="Wikipedia" title="Wikipedia">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.09 13.119c-.936 1.932-2.217 4.548-2.853 5.728-.616 1.074-1.127.931-1.532.029-1.406-3.321-4.293-9.144-5.651-12.409-.251-.601-.441-.987-.619-1.139-.181-.15-.554-.24-1.122-.271C.103 5.033 0 4.982 0 4.898v-.455l.052-.045c.924-.005 5.401 0 5.401 0l.051.045v.434c0 .119-.075.176-.225.176l-.564.031c-.485.029-.727.164-.727.436 0 .135.053.33.166.601 1.082 2.646 4.818 10.521 4.818 10.521l.136.046 2.411-4.81-.482-1.067-1.658-3.264s-.318-.654-.428-.872c-.728-1.443-.712-1.518-1.447-1.617-.207-.023-.313-.05-.313-.149v-.468l.06-.045h4.292l.113.037v.451c0 .105-.076.15-.227.15l-.308.047c-.792.061-.661.381-.136 1.422l1.582 3.252 1.758-3.504c.293-.64.233-.801.111-.947-.07-.084-.305-.22-.812-.24l-.201-.021c-.052 0-.098-.015-.145-.051-.045-.031-.067-.076-.067-.129v-.427l.061-.045c1.247-.008 4.043 0 4.043 0l.059.045v.436c0 .121-.059.178-.193.178-.646.03-.782.095-1.023.439-.12.186-.375.589-.646 1.039l-2.301 4.273-.065.135 2.792 5.712.17.048 4.396-10.438c.154-.422.129-.722-.064-.895-.197-.172-.346-.273-.857-.295l-.42-.016c-.061 0-.105-.014-.152-.045-.043-.029-.072-.075-.072-.119v-.436l.059-.045h4.961l.041.045v.437c0 .119-.074.18-.209.18-.648.03-1.127.18-1.443.421-.314.255-.557.616-.736 1.067 0 0-4.043 9.258-5.426 12.339-.525 1.007-1.053.917-1.503-.031-.571-1.171-1.773-3.786-2.646-5.71l.053-.036z"/></svg>
+                </a></li>
+                <li><a class="social" href="https://x.com/Sambhab_Mishra" target="_blank" aria-label="X" title="X">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>
+                </a></li>
+                <li><a class="social" href="https://linkedin.com/in/sambhab-mishra-ସମ୍ଭବ-ମିଶ୍ର-4149431b5/" target="_blank" aria-label="LinkedIn" title="LinkedIn">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                </a></li>
+                <li><a class="social" href="mailto:Sambhabmishraofficial@gmail.com" aria-label="Email" title="Email">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" class="outline"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></svg>
+                </a></li>
             </ul>
         </nav>
 
@@ -40,46 +50,48 @@
             <a href="research.html" class="menu-btn">Research & Experience</a>
             <a href="achievements.html" class="menu-btn">Patents & Achievements</a>
             <a href="skills.html" class="menu-btn">Skills & Interests</a>
-            <a href="manutd.html" class="menu-btn btn-manutd">Glory Glory Man United</a>
+            <a href="jensen.html" class="menu-btn">#Bringbackjensen</a>
+            <a href="butterfly-meadow.html" class="menu-btn">Butterfly Meadow</a>
         </div>
+        </div>
+
+        <button type="button" class="enter-btn" id="enter-house">
+            <span class="enter-dot" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V4h12v17" /><path d="M3 21h18" /><circle cx="14.5" cy="12.5" r="0.6" fill="currentColor" /></svg>
+            </span>
+            <span class="enter-label">enter the house <span class="enter-arrow">→</span></span>
+        </button>
     </div>
 
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch to night mode" title="Night mode">
+        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></svg>
+    </button>
+
+    <button type="button" class="leave-btn" id="leave-house">← step outside</button>
+    <p class="inside-hint">drag to look around · ctrl + scroll to zoom · double-click a room to visit it</p>
+
     <!-- Load Scripts -->
-    <script src="otoro-effect.js"></script>
-    <script src="tetris-sam.js"></script>
+    <script src="houses.js"></script>
+    <script src="sky.js"></script>
+    <script src="intro.js"></script>
+    <script type="module" src="doorbell.js"></script>
 
-    <!-- Sequence Manager -->
     <script>
-        window.onload = function () {
-            // Check if we've visited before in this session
-            const hasVisited = sessionStorage.getItem('introPlayed');
-            const introCanvas = document.getElementById('canvas-intro');
-            const mainContent = document.getElementById('main');
+        requestAnimationFrame(() => requestAnimationFrame(() => { document.getElementById('main').style.opacity = 1; }));
 
-            if (!hasVisited && introCanvas) {
-                // First visit: Play Tetris Intro
-                startTetrisIntro(function () {
-                    // Intro Finish Callback
-                    if (introCanvas) {
-                        introCanvas.style.transition = 'opacity 1s';
-                        introCanvas.style.opacity = 0;
-
-                        setTimeout(() => {
-                            introCanvas.style.display = 'none';
-                            if (window.startOtoro) startOtoro();
-                            if (mainContent) mainContent.style.opacity = 1;
-                            // Mark as visited
-                            sessionStorage.setItem('introPlayed', 'true');
-                        }, 1000);
-                    }
-                });
-            } else {
-                // Subsequent visit: Skip Intro
-                if (introCanvas) introCanvas.style.display = 'none'; // Hide immediately
-                if (window.startOtoro) startOtoro(); // Start background immediately
-                if (mainContent) mainContent.style.opacity = 1; // Show content immediately
-            }
+        const themeBtn = document.getElementById('theme-toggle');
+        const syncThemeBtn = () => {
+            const night = document.documentElement.classList.contains('night');
+            themeBtn.setAttribute('aria-label', night ? 'Switch to day mode' : 'Switch to night mode');
+            themeBtn.title = night ? 'Day mode' : 'Night mode';
         };
+        themeBtn.addEventListener('click', () => {
+            const night = document.documentElement.classList.toggle('night');
+            try { localStorage.setItem('theme', night ? 'night' : 'day'); } catch (e) {}
+            syncThemeBtn();
+        });
+        syncThemeBtn();
     </script>
     <!-- Google Analytics placeholder similar to original if needed, skipping for now -->
 </body>
