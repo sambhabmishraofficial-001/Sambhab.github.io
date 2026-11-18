@@ -674,6 +674,57 @@ body {
     color: #6b7b8e;
 }
 
+.subpage header:has(+ .ucl-section),
+.content-section.ucl-section {
+    max-width: 960px;
+}
+
+.ucl-figure {
+    margin: 0 0 1rem;
+}
+
+#ucl-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.ucl-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem 2rem;
+}
+
+.ucl-fact {
+    border-left: 3px solid #5e3f8f;
+    padding-left: 0.9rem;
+}
+
+.ucl-fact-key {
+    display: block;
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #5e3f8f;
+    margin-bottom: 0.25rem;
+}
+
+.content-section .ucl-fact p {
+    margin: 0;
+}
+
+.content-section .ucl-motto {
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #6b7b8e;
+}
+
+@media (max-width: 640px) {
+    .ucl-facts {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 900px) {
     .content-section.fun-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1105,8 +1156,17 @@ html.night .content-section h2 {
 html.night .project-header .date,
 html.night .content-section .pixel-caption,
 html.night .content-section .fun-credit,
+html.night .content-section .ucl-motto,
 html.night .source-link {
     color: var(--muted);
+}
+
+html.night .ucl-fact {
+    border-left-color: #b39ddb;
+}
+
+html.night .ucl-fact-key {
+    color: #b39ddb;
 }
 
 html.night hr {
