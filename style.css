@@ -646,10 +646,10 @@ body {
 }
 
 .content-section.fun-grid {
-    max-width: 1000px;
+    max-width: 1100px;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2.5rem 2rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2rem 1.5rem;
 }
 
 .fun-card {
@@ -662,6 +662,11 @@ body {
     border-radius: 6px;
 }
 
+/* Jensen's figure fills more of its frame than the other scenes; inset it to match their scale. */
+.fun-card .pixel-canvas.is-compact {
+    transform: scale(0.56);
+}
+
 .content-section .fun-credit {
     grid-column: 1 / -1;
     text-align: center;
@@ -669,7 +674,13 @@ body {
     color: #6b7b8e;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
+    .content-section.fun-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
     .content-section.fun-grid {
         grid-template-columns: 1fr;
     }
@@ -696,7 +707,7 @@ body.subpage {
 }
 
 .subpage header:has(+ .fun-grid) {
-    max-width: 1000px;
+    max-width: 1100px;
 }
 
 .subpage header h1 {
