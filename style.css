@@ -454,13 +454,22 @@ body.home.inside .inside-hint {
     transition: color 0.2s ease;
 }
 
-/* Words that are links get a red underline; buttons and icons stay plain. */
+/* A pen stroke: uneven on purpose, stretched to the width of each linked word. */
+#main .hero-card p a,
+.subpage .content-section a:not([class]),
+.source-link a {
+    text-decoration: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 9' preserveAspectRatio='none'%3E%3Cpath d='M0 4.6C18 2.2 34 7.2 62 4.1C86 1.4 104 7.6 136 4.8C162 2.4 178 6.6 200 3.7L200 5.2C176 8.2 158 3.6 132 6.4C108 8.8 84 3.2 58 6.1C36 8.4 16 4.4 0 6.4Z' fill='%23DA291C'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 100% 7px;
+    padding-bottom: 5px;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+
 #main .hero-card p a {
     color: inherit;
-    text-decoration: underline;
-    text-decoration-color: #DA291C;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
 }
 
 #main a:hover {
@@ -785,10 +794,6 @@ body.subpage {
 
 .subpage .content-section a:not([class]) {
     color: inherit;
-    text-decoration: underline;
-    text-decoration-color: #DA291C;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 3px;
 }
 
 .subpage .content-section a:not([class]):hover {
@@ -926,14 +931,6 @@ body.subpage {
 
 .source-link a {
     color: #DA291C;
-    text-decoration: underline;
-    text-decoration-color: #DA291C;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 3px;
-}
-
-.source-link a:hover {
-    text-decoration: underline;
 }
 
 /* Dictionary / Gallery Styles */
