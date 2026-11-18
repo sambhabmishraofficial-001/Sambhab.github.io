@@ -454,6 +454,15 @@ body.home.inside .inside-hint {
     transition: color 0.2s ease;
 }
 
+/* Words that are links get a red underline; buttons and icons stay plain. */
+#main .hero-card p a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: #DA291C;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+
 #main a:hover {
     color: #3aa876;
 }
@@ -777,7 +786,8 @@ body.subpage {
 .subpage .content-section a:not([class]) {
     color: inherit;
     text-decoration: underline;
-    text-decoration-thickness: 1px;
+    text-decoration-color: #DA291C;
+    text-decoration-thickness: 2px;
     text-underline-offset: 3px;
 }
 
@@ -916,8 +926,10 @@ body.subpage {
 
 .source-link a {
     color: #DA291C;
-    /* Match theme or link color */
-    text-decoration: none;
+    text-decoration: underline;
+    text-decoration-color: #DA291C;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
 }
 
 .source-link a:hover {
