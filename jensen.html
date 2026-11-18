@@ -3,42 +3,13 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>#Bringbackjensen - Sambhab Mishra</title>
-    <link rel="stylesheet" href="style.css">
-    <script>try { if (localStorage.getItem('theme') === 'night') document.documentElement.classList.add('night'); } catch (e) {}</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>Fun - Sambhab Mishra</title>
+    <meta http-equiv="refresh" content="0; url=fun.html">
+    <link rel="canonical" href="fun.html">
 </head>
 
-<body class="subpage">
-    <div class="container">
-        <header>
-            <h1>#Bringbackjensen</h1>
-            <a href="index.html" class="btn-back">← Back to Home</a>
-        </header>
-
-        <section class="content-section pixel-stage" id="pixel-stage">
-            <canvas id="jacket-pause" class="pixel-canvas" aria-label="Pixel animation: a quiet pause"></canvas>
-            <p id="jacket-pause-title" class="pixel-caption"></p>
-        </section>
-    </div>
-
-    <script type="module">
-        import animation from './animations/jacket-pause/jacket-pause.js';
-
-        const canvas = document.getElementById('jacket-pause');
-        document.getElementById('jacket-pause-title').textContent = animation.config.title;
-        const renderer = animation.createRenderer(canvas);
-        const start = performance.now();
-
-        function frame(now) {
-            renderer.draw((now - start) / 1000, { opaque: true });
-            requestAnimationFrame(frame);
-        }
-        requestAnimationFrame(frame);
-    </script>
+<body>
+    <p><a href="fun.html">This page has moved to Fun.</a></p>
 </body>
 
 </html>

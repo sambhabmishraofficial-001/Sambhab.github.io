@@ -645,6 +645,36 @@ body {
     color: #6b7b8e;
 }
 
+.content-section.fun-grid {
+    max-width: 1000px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.5rem 2rem;
+}
+
+.fun-card {
+    margin: 0;
+}
+
+.fun-card .pixel-canvas {
+    width: 100%;
+    max-width: 440px;
+    border-radius: 6px;
+}
+
+.content-section .fun-credit {
+    grid-column: 1 / -1;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #6b7b8e;
+}
+
+@media (max-width: 700px) {
+    .content-section.fun-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 body.subpage {
     overflow-y: auto;
     background-color: #ffffff;
@@ -663,6 +693,10 @@ body.subpage {
 
 .subpage header:has(+ .achievements-layout) {
     max-width: 1200px;
+}
+
+.subpage header:has(+ .fun-grid) {
+    max-width: 1000px;
 }
 
 .subpage header h1 {
@@ -1059,6 +1093,7 @@ html.night .content-section h2 {
 
 html.night .project-header .date,
 html.night .content-section .pixel-caption,
+html.night .content-section .fun-credit,
 html.night .source-link {
     color: var(--muted);
 }
