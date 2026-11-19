@@ -81,7 +81,7 @@ const WIN_SCORE = 5, BALLS_PER_TEAM = 4, BALL_R = 0.32, JACK_R = 0.18;
 const G = {
   phase: 'settle-jack', score: [0, 0], starter: 0, team: 0, left: [4, 4],
   jack: null, balls: [], tracks: [], yaw: Math.PI, power: 0, swing: 0, released: false,
-  ai: null, timer: 0, time: 0, result: null, status: '',
+  ai: null, timer: 0, load: 1, time: 0, result: null, status: '',
 };
 const nodes = {
   s: [document.getElementById('s0'), document.getElementById('s1')],
@@ -134,7 +134,7 @@ function nextTurn() {
   else if (d[1] === Infinity) t = 1;
   else t = d[0] > d[1] ? 0 : 1;
   if (!G.left[t]) t = 1 - t;
-  G.team = t; G.power = 0; G.swing = 0;
+  G.team = t; G.power = 0; G.swing = 0; G.load = 0;
   G.yaw = Math.atan2(G.jack.y, G.jack.x - THROW_X);
   G.phase = 'aim';
   if (t === 1) { G.ai = planAI(); G.timer = 0; setStatus('rival is lining up'); }
@@ -168,6 +168,8 @@ function stepPhysics(dt) {
       b.vz -= GRAVITY * dt; b.z += b.vz * dt;
       if (b.z <= b.r) { b.z = b.r; if (b.vz < -1.6) { sound('thud', Math.min(1, -b.vz / 5)); b.vz *= -0.22; b.vx *= 0.82; b.vy *= 0.82; } else b.vz = 0; }
     }
+    // A collision can shove a grounded ball downward. Leave it there or the turn never ends.
+    if (b.z <= b.r && b.vz < 0) { b.z = b.r; b.vz = 0; }
     b.x += b.vx * dt; b.y += b.vy * dt;
     const sp = Math.hypot(b.vx, b.vy);
     if (b.z <= b.r + 0.001 && sp > 0) {
@@ -202,12 +204,16 @@ function update(dt) {
   G.time += dt;
   for (let k = 0; k < 4; k++) stepPhysics(dt / 4);
   if (G.phase === 'settle-jack') { setStatus(''); if (atRest()) nextTurn(); }
-  else if (G.phase === 'aim' && G.team === 1) {
+  else if (G.phase === 'aim') {
+    G.load = Math.min(1, G.load + dt / 0.28);
+    if (G.team === 1) {
     G.timer += dt;
     const t = clamp((G.timer - 0.55) / 0.7, 0, 1);
-    G.yaw = lerp(G.yaw, G.ai.yaw, Math.min(1, dt * 6));
+    const turn = Math.atan2(Math.sin(G.ai.yaw - G.yaw), Math.cos(G.ai.yaw - G.yaw));
+    G.yaw = wrapAim(G.yaw + turn * Math.min(1, dt * 6));
     G.power = G.ai.power * ease(t);
     if (t >= 1 && G.timer > 1.45) releaseThrow();
+    }
   } else if (G.phase === 'swing') {
     G.swing = Math.min(1, G.swing + dt / 0.22);
     if (!G.released && G.swing > 0.62) { G.released = true; launch(); }
@@ -255,6 +261,83 @@ function drawBase(P, R) {
   }
 }
 
+const AIM_CONE = 0.62;
+function wrapAim(yaw) {
+  const y = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+  if (y >= 0) return clamp(y, Math.PI - AIM_CONE, Math.PI);
+  return clamp(y, -Math.PI, -(Math.PI - AIM_CONE));
+}
+function rackPos(team, i) {
+  return { x: 5.2 + i * 1.2, y: team === 0 ? 2.7 : -2.7, z: BALL_R };
+}
+function heldBall() {
+  const fx = Math.cos(G.yaw), fy = Math.sin(G.yaw);
+  const pull = G.power * 2.3;
+  let x = 9.05 + pull, y = 0.7 - fy * 0.35, z = 1.35;
+  if (G.phase === 'swing') {
+    const t = ease(Math.min(1, G.swing / 0.62));
+    x = lerp(x, THROW_X + fx * 0.8, t);
+    y = lerp(y, fy * 0.8, t);
+    z = lerp(1.35, 0.72, t);
+  } else {
+    const rack = rackPos(G.team, Math.max(0, G.left[G.team] - 1));
+    const t = ease(G.load);
+    x = lerp(rack.x, x, t);
+    y = lerp(rack.y, y, t);
+    z = lerp(rack.z, 1.35, t) + Math.sin(t * Math.PI) * 0.45;
+  }
+  return { x, y, z, team: G.team, r: BALL_R * 1.15 };
+}
+function ballFill(team) {
+  if (team < 0) return [['sun', 0.98]];
+  return team === 0 ? PAL.RED : [['blue', 0.85]];
+}
+function drawOneBall(P, b) {
+  const [sx, sy] = iso(b.x, b.y, 0.02);
+  P.dot(sx, sy, b.r * 16 * clamp(1 - b.z / 5, 0.4, 1), 'blue', 0.26, 0.48);
+  const [bx, by] = iso(b.x, b.y, b.z);
+  P.shape(circle(bx, by, b.r * 15, 14), ballFill(b.team), { lw: 0.9, amp: 0.12 });
+  if (G.result && G.result.counted && G.result.counted.includes(b)) {
+    P.line(circle(bx, by, b.r * 22, 16), 1.6, 'sun', true, 0.15);
+  }
+}
+function predictShot() {
+  const fx = Math.cos(G.yaw), fy = Math.sin(G.yaw), v = Math.max(0.01, G.power * MAX_SPEED);
+  let x = THROW_X + fx * 0.8, y = fy * 0.8, z = 0.72, vz = LAUNCH_VZ;
+  const pts = [];
+  for (let k = 0; k < 90; k++) {
+    vz -= GRAVITY * 0.035;
+    z += vz * 0.035;
+    x += fx * v * 0.035;
+    y += fy * v * 0.035;
+    if (Math.abs(x) > COURT_X - 0.15 || Math.abs(y) > COURT_Y - 0.15) {
+      pts.push([clamp(x, -COURT_X + 0.2, COURT_X - 0.2), clamp(y, -COURT_Y + 0.2, COURT_Y - 0.2), 0.06]);
+      const last = pts[pts.length - 1];
+      return { pts, land: [last[0], last[1]] };
+    }
+    if (k % 2 === 0) pts.push([x, y, Math.max(0.06, z)]);
+    if (z <= BALL_R) {
+      let vx = fx * v * 0.82, vy = fy * v * 0.82;
+      for (let n = 0; n < 16; n++) {
+        const sp = Math.hypot(vx, vy);
+        if (sp < 0.08) break;
+        x += vx * 0.05; y += vy * 0.05;
+        if (Math.abs(x) > COURT_X - 0.2 || Math.abs(y) > COURT_Y - 0.2) {
+          x = clamp(x, -COURT_X + 0.2, COURT_X - 0.2);
+          y = clamp(y, -COURT_Y + 0.2, COURT_Y - 0.2);
+          pts.push([x, y, 0.06]);
+          break;
+        }
+        const next = Math.max(0, sp - ROLL_DECEL * 0.05);
+        vx *= next / sp; vy *= next / sp;
+        if (n % 2 === 0) pts.push([x, y, 0.06]);
+      }
+      return { pts, land: [x, y] };
+    }
+  }
+  return { pts, land: null };
+}
+
 function drawPlayer(P, x, y, shirt, active) {
   const [px, py] = iso(x, y, 0.02);
   P.dot(px, py, 7, 'blue', 0.22, 0.42);
@@ -276,14 +359,27 @@ function drawLive(P) {
     P.dot(sx, sy, 1.5, 'blue', 0.14, 0.5);
   }
 
-  // Aim arc & landing preview when player is pulling back
+  const aiming = (G.phase === 'aim' || (G.phase === 'swing' && !G.released)) && G.left[G.team] > 0;
+  const held = aiming ? heldBall() : null;
+
+  // Balls waiting beside the lane. The next one lifts into the hand on your turn.
+  for (let team = 0; team < 2; team++) {
+    const skip = aiming && team === G.team ? 1 : 0;
+    for (let i = 0; i < G.left[team] - skip; i++) {
+      drawOneBall(P, { ...rackPos(team, i), team, r: BALL_R });
+    }
+  }
+
+  // Aim arc follows the real throw, including the roll after it lands.
   if (G.phase === 'aim' && G.team === 0 && G.power > 0.04) {
-    const fx = Math.cos(G.yaw), fy = Math.sin(G.yaw), v = G.power * MAX_SPEED;
-    for (let k = 1; k <= 7; k++) {
-      const t = k * 0.08;
-      const ax = THROW_X + fx * v * t, ay = fy * v * t, az = Math.max(0.05, 0.72 + LAUNCH_VZ * t - 0.5 * GRAVITY * t * t);
-      const [qx, qy] = iso(ax, ay, az);
-      P.dot(qx, qy, 2.2, 'coral', 0.9);
+    const shot = predictShot();
+    shot.pts.forEach((p, i) => {
+      const [qx, qy] = iso(p[0], p[1], p[2]);
+      P.dot(qx, qy, i === shot.pts.length - 1 ? 5 : 3.6, 'blue', 0.92);
+    });
+    if (shot.land) {
+      const [lx, ly] = iso(shot.land[0], shot.land[1], 0.05);
+      P.line(circle(lx, ly, 10, 18), 1.7, 'blue', true, 0.16);
     }
   }
 
@@ -293,16 +389,8 @@ function drawLive(P) {
 
   // Depth-sorted balls + jack
   const list = allBalls().slice().sort((a, b) => (a.x + a.y) - (b.x + b.y));
-  for (const b of list) {
-    const [sx, sy] = iso(b.x, b.y, 0.02);
-    P.dot(sx, sy, b.r * 16 * clamp(1 - b.z / 5, 0.4, 1), 'blue', 0.26, 0.48);
-    const [bx, by] = iso(b.x, b.y, b.z);
-    const fill = b.team === -1 ? [['sun', 0.98]] : (b.team === 0 ? PAL.RED : [['blue', 0.85]]);
-    P.shape(circle(bx, by, b.r * 15, 14), fill, { lw: 0.9, amp: 0.12 });
-    if (G.result && G.result.counted.includes(b)) {
-      P.line(circle(bx, by, b.r * 22, 16), 1.6, 'sun', true, 0.15);
-    }
-  }
+  for (const b of list) drawOneBall(P, b);
+  if (held) drawOneBall(P, held);
 }
 
 /* ---------- Viewport, cache & loop ---------- */
@@ -347,6 +435,14 @@ function draw() {
 }
 
 /* ---------- Drag-back & keyboard input ---------- */
+function courtPoint(x, y, z = 0) {
+  const ix = (x - y) * TW / 2, iy = (x + y) * TH / 2 - z * TZ;
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: r.left + (ix * scale + ox) * r.width / canvas.width,
+    y: r.top + (iy * scale + oy) * r.height / canvas.height,
+  };
+}
 let drag = null;
 canvas.addEventListener('pointerdown', e => {
   ensureAudio(); canvas.focus({ preventScroll: true });
@@ -358,12 +454,19 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointermove', e => {
   if (!drag || G.phase !== 'aim' || G.team !== 0) return;
-  const dx = drag.x - e.clientX, dy = drag.y - e.clientY;
-  // Convert screen pull vector to court isometric direction
-  const wx = dx / TW + dy / TH, wy = dy / TH - dx / TW;
-  const len = Math.hypot(dx, dy);
-  G.power = clamp(len / 130, 0, 1);
-  if (len > 6) G.yaw = clamp(Math.atan2(wy, wx), Math.PI * 0.65, Math.PI * 1.35) || Math.atan2(wy, wx);
+  const from = courtPoint(THROW_X, 0, 0.8);
+  const to = courtPoint(G.jack.x, G.jack.y, 0.2);
+  let tx = to.x - from.x, ty = to.y - from.y;
+  const tl = Math.hypot(tx, ty) || 1;
+  tx /= tl; ty /= tl;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  const back = Math.max(0, -(dx * tx + dy * ty));
+  const side = dx * -ty + dy * tx;
+  G.power = clamp(back / 120, 0, 1);
+  if (back > 8) {
+    const jackYaw = Math.atan2(G.jack.y, G.jack.x - THROW_X);
+    G.yaw = wrapAim(jackYaw + clamp(side / 180, -1, 1) * 0.34);
+  }
 });
 function endDrag() {
   if (!drag) return;
@@ -371,13 +474,13 @@ function endDrag() {
   if (G.phase === 'aim' && G.team === 0) releaseThrow();
 }
 canvas.addEventListener('pointerup', endDrag);
-canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('pointercancel', () => { drag = null; if (G.phase === 'aim') G.power = 0; });
 canvas.addEventListener('keydown', e => {
   if (G.phase === 'over' && e.key === ' ') { G.score = [0, 0]; G.starter = 0; newFrame(); return; }
   if (G.phase === 'frame-end' && e.key === ' ') { newFrame(); return; }
   if (G.phase !== 'aim' || G.team !== 0) return;
-  if (e.key === 'ArrowLeft') G.yaw -= 0.06;
-  else if (e.key === 'ArrowRight') G.yaw += 0.06;
+  if (e.key === 'ArrowLeft') G.yaw = wrapAim(G.yaw - 0.05);
+  else if (e.key === 'ArrowRight') G.yaw = wrapAim(G.yaw + 0.05);
   else if (e.key === 'ArrowUp') G.power = clamp(G.power + 0.08, 0, 1);
   else if (e.key === 'ArrowDown') G.power = clamp(G.power - 0.08, 0, 1);
   else if (e.key === ' ') { e.preventDefault(); if (G.power < 0.1) G.power = 0.55; releaseThrow(); }
