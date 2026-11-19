@@ -663,8 +663,49 @@ body {
     color: #6b7b8e;
 }
 
-.content-section.fun-grid {
+.subpage header:has(+ .fun-page),
+.content-section.fun-page {
     max-width: 1100px;
+}
+
+.fun-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0 0 2rem;
+}
+
+.fun-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.42rem 1rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #23272a;
+    text-decoration: none;
+    background: #ffffff;
+    border: 1px solid #23272a;
+    border-radius: 7px;
+    box-shadow: 3px 3px 0 #23272a;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fun-tab:hover,
+.fun-tab:focus-visible {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 #23272a;
+    outline: none;
+}
+
+.fun-part {
+    scroll-margin-top: 1.5rem;
+}
+
+.fun-part + .fun-part {
+    margin-top: 3.5rem;
+}
+
+.fun-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 2rem 1.5rem;
@@ -690,6 +731,81 @@ body {
     text-align: center;
     font-size: 0.85rem;
     color: #6b7b8e;
+}
+
+.game-card {
+    border: 1px solid rgba(35, 39, 42, 0.2);
+    border-radius: 10px;
+    padding: 1.25rem;
+    background: #ffffff;
+}
+
+.game-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.game-card-head h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.content-section .game-desc {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #6b7b8e;
+}
+
+.game-open-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.38rem 0.85rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #23272a;
+    text-decoration: none;
+    background: #ffffff;
+    border: 1px solid #23272a;
+    border-radius: 7px;
+    box-shadow: 3px 3px 0 #23272a;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.game-open-btn:hover,
+.game-open-btn:focus-visible {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 #23272a;
+    outline: none;
+}
+
+.game-frame-wrap {
+    width: 100%;
+    border: 1px solid rgba(35, 39, 42, 0.15);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.game-frame {
+    display: block;
+    width: 100%;
+    aspect-ratio: 400 / 264;
+    min-height: 360px;
+    border: 0;
+}
+
+@media (max-width: 640px) {
+    .game-card-head {
+        flex-direction: column;
+    }
+    .game-frame {
+        min-height: 280px;
+    }
 }
 
 .subpage header:has(+ .ucl-section),
@@ -744,13 +860,13 @@ body {
 }
 
 @media (max-width: 900px) {
-    .content-section.fun-grid {
+    .fun-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @media (max-width: 560px) {
-    .content-section.fun-grid {
+    .fun-grid {
         grid-template-columns: 1fr;
     }
 }
@@ -1165,9 +1281,23 @@ html.night .content-section h2 {
 html.night .project-header .date,
 html.night .content-section .pixel-caption,
 html.night .content-section .fun-credit,
+html.night .content-section .game-desc,
 html.night .content-section .ucl-motto,
 html.night .source-link {
     color: var(--muted);
+}
+
+html.night .fun-tab,
+html.night .game-open-btn {
+    color: var(--ink);
+    background: var(--paper);
+    border-color: var(--ink);
+    box-shadow: 3px 3px 0 var(--ink);
+}
+
+html.night .game-card {
+    background: var(--paper);
+    border-color: rgba(236, 235, 228, 0.2);
 }
 
 html.night .ucl-fact {
