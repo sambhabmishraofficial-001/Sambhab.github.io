@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Tie-Break</title>
 <style>
-  :root { --ink: #1c1b19; --muted: #8b877f; --paper: #fff; --a: #b5392b; --b: #27496d; }
+  :root { --ink: #23272a; --muted: #6b7b8e; --paper: #fff; --a: #ec6450; --b: #2e4682; }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: var(--paper); color: var(--ink); }
   body { font: 13px/1.35 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; overflow: hidden; }
   #stage { position: fixed; inset: 0; display: grid; place-items: center; }
-  canvas { display: block; image-rendering: pixelated; touch-action: none; cursor: pointer; outline: none; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: pointer; outline: none; }
   .hud { position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); display: flex; justify-content: space-between; gap: 16px; pointer-events: none; }
   #scores { position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); display: grid; gap: 2px; pointer-events: none; }
   #bottom { bottom: max(14px, env(safe-area-inset-bottom)); align-items: flex-end; }
   .team { display: flex; align-items: center; gap: 8px; }
   .team b { font-size: 16px; font-weight: 600; min-width: 2ch; font-variant-numeric: tabular-nums; }
-  .team i { width: 6px; height: 6px; background: currentColor; opacity: 0; }
+  .team i { width: 6px; height: 6px; background: currentColor; opacity: 0; border-radius: 1px; }
   .team i.on { opacity: 1; }
   #you { color: var(--a); } #rival { color: var(--b); }
   #status { color: var(--muted); }
@@ -41,16 +41,263 @@ PixelPlays.mount({
   rules: [
     'Your player runs on their own. You only choose the moment to hit: tap, click or press space.',
     'After the ball bounces on your side, a ring sweeps across the far court. It shows where your shot will land. Hit when it is away from the rival.',
-    'A yellow ring is in, a black ring is out. The closer to the line, the harder for the rival to reach.',
+    'A yellow ring is in, a blue ring is out. The closer to the line, the harder for the rival to reach.',
     'To serve, tap to toss and tap again to hit into the diagonal box. Two faults lose the point.',
     'Rallies speed up. First to 7 with a two-point lead wins.',
   ],
 });
 </script>
-<script>window.PP_SCENE = { originY: 10, shadowX: .9, shadowY: -.6 };</script>
-<script src="../engine.js"></script>
 <script>
 'use strict';
+
+/* ---------- Risograph print engine (matching houses.js / ucl.js) ---------- */
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+const INK = {
+  blue: [46, 70, 130],
+  coral: [236, 100, 80],
+  sun: [255, 204, 46],
+  teal: [0, 138, 136],
+};
+const ANGLE = { blue: 15, coral: 75, sun: 0, teal: 45 };
+const SHIFT = { blue: [0.3, -0.2], coral: [-0.4, 0.3], sun: [0.25, 0.45], teal: [-0.3, -0.4] };
+const TAU = Math.PI * 2;
+const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+const GREEN = [['teal', 0.72], ['sun', 0.55]];
+const LEAF = [['teal', 0.5], ['sun', 0.8]];
+const CLAY = [['coral', 0.68], ['sun', 0.42]];
+const CLAY_WEAR = [['coral', 0.45], ['sun', 0.35]];
+const WOOD = [['coral', 0.48], ['sun', 0.45]];
+const RED = [['coral', 0.9], ['blue', 0.15]];
+const ORANGE = [['coral', 0.6], ['sun', 0.7]];
+const PURPLE = [['blue', 0.45], ['coral', 0.5]];
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t * t * (3 - 2 * t);
+
+function hash(...parts) {
+  let h = 2166136261;
+  for (const p of parts) {
+    const s = String(p);
+    for (let k = 0; k < s.length; k++) {
+      h ^= s.charCodeAt(k);
+      h = Math.imul(h, 16777619);
+    }
+  }
+  return h >>> 0;
+}
+
+function rand(seed) {
+  let s = (seed >>> 0) || 1;
+  return () => {
+    s ^= s << 13; s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5; s >>>= 0;
+    return s / 4294967296;
+  };
+}
+
+const LEVELS = 16, CELL = 2.4, CELLS = 8, RES = 5;
+const tiles = new Map();
+function screenTile(ink, level) {
+  const key = ink + level;
+  let cv = tiles.get(key);
+  if (cv) return cv;
+  const cell = CELL * RES, size = cell * CELLS, tone = level / LEVELS;
+  cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const c = cv.getContext('2d');
+  const R = rand(hash('screen', ink, level));
+  c.fillStyle = rgba(INK[ink]);
+  if (tone >= 1) {
+    c.fillRect(0, 0, size, size);
+  } else if (tone <= 0.5) {
+    for (let y = 0; y < CELLS; y++) {
+      for (let x = 0; x < CELLS; x++) {
+        const r = cell * Math.sqrt(tone / Math.PI) * (0.86 + R() * 0.24);
+        c.beginPath();
+        c.arc((x + 0.5) * cell + (R() - 0.5) * RES * 0.6, (y + 0.5) * cell + (R() - 0.5) * RES * 0.6, r, 0, TAU);
+        c.fill();
+      }
+    }
+  } else {
+    c.fillRect(0, 0, size, size);
+    c.globalCompositeOperation = 'destination-out';
+    for (let y = 0; y <= CELLS; y++) {
+      for (let x = 0; x <= CELLS; x++) {
+        const r = cell * Math.sqrt((1 - tone) / Math.PI) * (0.86 + R() * 0.24);
+        c.beginPath();
+        c.arc(x * cell, y * cell, r, 0, TAU);
+        c.fill();
+      }
+    }
+  }
+  c.globalCompositeOperation = 'destination-out';
+  const n = Math.round(size * size / (RES * RES * 60));
+  for (let k = 0; k < n; k++) {
+    const s = (0.5 + R() * 1.3) * RES * (R() < 0.07 ? 2 : 1);
+    c.globalAlpha = 0.25 + R() * 0.65;
+    c.fillRect(R() * size, R() * size, s, s);
+  }
+  tiles.set(key, cv);
+  return cv;
+}
+
+const patterns = new Map();
+function pattern(ink, tone) {
+  const level = clamp(Math.round(tone * LEVELS), 1, LEVELS);
+  const key = ink + level;
+  let p = patterns.get(key);
+  if (!p) {
+    p = ctx.createPattern(screenTile(ink, level), 'repeat');
+    if (p.setTransform) p.setTransform(new DOMMatrix().rotateSelf(ANGLE[ink]).scaleSelf(1 / RES));
+    patterns.set(key, p);
+  }
+  return p;
+}
+
+function Pen(c, seed) {
+  const R = rand(seed);
+  const P = { c, R };
+
+  function wobble(pts, closed, amp) {
+    const out = [];
+    const n = pts.length, segs = closed ? n : n - 1;
+    for (let s = 0; s < segs; s++) {
+      const a = pts[s], b = pts[(s + 1) % n];
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      const steps = Math.max(1, Math.ceil(len / 8));
+      const nx = -dy / len, ny = dx / len;
+      for (let k = 0; k < steps; k++) {
+        const t = k / steps, o = (R() - 0.5) * 2 * amp;
+        out.push([a[0] + dx * t + nx * o, a[1] + dy * t + ny * o]);
+      }
+    }
+    if (!closed) out.push(pts[n - 1]);
+    return out;
+  }
+
+  P.path = pts => {
+    c.beginPath();
+    c.moveTo(pts[0][0], pts[0][1]);
+    for (let k = 1; k < pts.length; k++) c.lineTo(pts[k][0], pts[k][1]);
+    c.closePath();
+  };
+
+  P.knock = pts => {
+    c.globalCompositeOperation = 'source-over';
+    P.path(pts);
+    c.fillStyle = '#fff';
+    c.fill();
+  };
+
+  P.fill = (pts, ink, tone) => {
+    if (tone <= 0.02) return;
+    c.save();
+    c.globalCompositeOperation = 'multiply';
+    c.translate(SHIFT[ink][0], SHIFT[ink][1]);
+    P.path(pts);
+    c.fillStyle = pattern(ink, tone);
+    c.fill();
+    c.restore();
+  };
+
+  P.line = (pts, w = 1, ink = 'blue', closed = false, amp = 0.45) => {
+    if (pts.length < 2) return;
+    const q = wobble(pts, closed, amp);
+    c.save();
+    c.globalCompositeOperation = 'multiply';
+    c.translate(SHIFT[ink][0], SHIFT[ink][1]);
+    c.strokeStyle = rgba(INK[ink], 0.92);
+    c.lineWidth = w;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.beginPath();
+    c.moveTo(q[0][0], q[0][1]);
+    for (let k = 1; k < q.length; k++) c.lineTo(q[k][0], q[k][1]);
+    if (closed) c.closePath();
+    c.stroke();
+    c.restore();
+  };
+
+  P.chalk = (pts, w = 1.8, closed = false) => {
+    const q = wobble(pts, closed, 0.28);
+    c.save();
+    c.globalCompositeOperation = 'source-over';
+    c.strokeStyle = '#fff';
+    c.lineWidth = w;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.beginPath();
+    c.moveTo(q[0][0], q[0][1]);
+    for (let k = 1; k < q.length; k++) c.lineTo(q[k][0], q[k][1]);
+    if (closed) c.closePath();
+    c.stroke();
+    c.restore();
+  };
+
+  P.dot = (x, y, r, ink, tone, ry = 1) => {
+    P.fill(ellipse(x, y, r, r * ry, 12), ink, tone);
+  };
+
+  return P;
+}
+
+/* ---------- Isometric projection ---------- */
+
+const TW = 26, TH = 13, TZ = 19;
+const iso = (x, y, z = 0) => [(x - y) * TW / 2, (x + y) * TH / 2 - z * TZ];
+const flat = (x0, y0, z, x1, y1) => [iso(x0, y0, z), iso(x1, y0, z), iso(x1, y1, z), iso(x0, y1, z)];
+const faceL = (x0, y0, z, x1, y1, h) => [iso(x0, y1, z), iso(x1, y1, z), iso(x1, y1, z + h), iso(x0, y1, z + h)];
+const faceR = (x0, y0, z, x1, y1, h) => [iso(x1, y0, z), iso(x1, y1, z), iso(x1, y1, z + h), iso(x1, y0, z + h)];
+
+function ellipse(x, y, rx, ry, n = 18) {
+  const pts = [];
+  for (let k = 0; k < n; k++) {
+    const a = k / n * TAU;
+    pts.push([x + Math.cos(a) * rx, y + Math.sin(a) * ry]);
+  }
+  return pts;
+}
+const circle = (x, y, r, n = 14) => ellipse(x, y, r, r, n);
+
+function paint(P, pts, fills, k = 1, shade = 0) {
+  P.knock(pts);
+  for (const [ink, tone] of fills) P.fill(pts, ink, Math.min(1, tone * k));
+  if (shade) P.fill(pts, 'blue', shade);
+}
+function shape(P, pts, fills = [], o = {}) {
+  paint(P, pts, fills, 1, o.shade || 0);
+  if (o.line !== false) P.line(pts, o.lw ?? 1, 'blue', true, o.amp ?? 0.4);
+}
+function block(P, x0, y0, z0, x1, y1, z1, fills = [], o = {}) {
+  const h = z1 - z0, s = o.shade ?? 1;
+  const L = faceL(x0, y0, z0, x1, y1, h);
+  const Rf = faceR(x0, y0, z0, x1, y1, h);
+  const T = flat(x0, y0, z1, x1, y1);
+  paint(P, L, fills, 0.85, 0.1 * s);
+  paint(P, Rf, fills, 1, 0.25 * s);
+  paint(P, T, o.top || fills, 0.6, 0);
+  const lw = o.lw ?? 0.9;
+  P.line(L, lw, 'blue', true, 0.3);
+  P.line(Rf, lw, 'blue', true, 0.3);
+  P.line(T, lw, 'blue', true, 0.3);
+}
+function blob(P, x, y, r, fills, R, o = {}) {
+  const pts = [];
+  const n = 11;
+  for (let k = 0; k < n; k++) {
+    const a = k / n * TAU, rr = r * (0.82 + R() * 0.28);
+    pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr * (o.squash ?? 0.9)]);
+  }
+  shape(P, pts, fills, { lw: o.lw ?? 0.9, shade: o.shade || 0 });
+}
+
+/* ---------- Game constants & state (Tie-Break) ---------- */
 
 const COURT_X = 11, COURT_Y = 4.6, SERVICE_X = 6, APRON_X = 13.2, APRON_Y = 8.4;
 const NET_Y = 5.2, NET_Z = 1.03, FENCE_X = -13.4, FENCE_Y = -8.8, FENCE_Z = 3.2;
@@ -62,127 +309,20 @@ const TOSS_VZ = 7.2, TOSS_FROM = .34, TOSS_TO = .96;
 const BOT_SPEED = 3.6, BOT_REACH = .8, WIN_SCORE = 7, PLAYER_SPEED = 16;
 
 const TEAM = [
-  { shirt: [240, 234, 218], stripe: [188, 60, 44], legs: [236, 230, 214], hair: [38, 28, 24], skin: [222, 170, 132], racket: [150, 42, 34] },
-  { shirt: [40, 72, 110], stripe: [226, 228, 224], legs: [30, 48, 76], hair: [120, 112, 104], skin: [196, 146, 110], racket: [24, 36, 56] },
+  { shirt: RED, hair: [['blue', 0.9]], racket: 'coral' },
+  { shirt: [['blue', 0.72]], hair: [['blue', 0.45]], racket: 'blue' },
 ];
 const CROWD = [
-  { x: 1.8, shirt: [214, 170, 62], stripe: [214, 170, 62], legs: [70, 64, 60], hair: [60, 44, 34], skin: [222, 170, 132] },
-  { x: 3.3, shirt: [96, 132, 112], stripe: [226, 228, 214], legs: [48, 47, 58], hair: [150, 142, 130], skin: [196, 146, 110] },
-  { x: 4.3, shirt: [168, 88, 104], stripe: [168, 88, 104], legs: [84, 72, 58], hair: [34, 28, 26], skin: [214, 164, 128] },
-  { x: 7.7, shirt: [70, 96, 138], stripe: [240, 234, 218], legs: [60, 58, 64], hair: [92, 62, 40], skin: [222, 170, 132] },
-  { x: 9.4, shirt: [226, 222, 208], stripe: [226, 222, 208], legs: [54, 74, 92], hair: [46, 36, 30], skin: [190, 140, 104] },
+  { x: 1.8, shirt: [['sun', 0.85]], hair: [['coral', 0.5], ['blue', 0.5]] },
+  { x: 3.3, shirt: [['teal', 0.7]], hair: [['blue', 0.4]] },
+  { x: 4.3, shirt: PURPLE, hair: [['blue', 0.9]] },
+  { x: 7.7, shirt: [['blue', 0.55]], hair: WOOD },
+  { x: 9.4, shirt: ORANGE, hair: [['blue', 0.85]] },
 ];
-const BALL_COLOR = [216, 236, 72];
-const CLAY_TONES = [[172, 90, 58], [181, 97, 62], [190, 104, 67], [199, 112, 73]];
-const CLAY = [190, 104, 67], DIRT = [132, 100, 72], LINE = rgb(246, 238, 220);
-const KIND_CLAY = 1, KIND_DIRT = 2;
 
-function groundColor(x, y, ix, iy, i) {
-  const edge = Math.pow(Math.pow(Math.abs(x) / 16.2, 4) + Math.pow(Math.abs(y) / 11, 4), .25);
-  const rough = edge + (noise(x * 1.3, y * 1.3) - .5) * .1;
-  if (rough > 1.04) return 0;
-  if (rough > .94 && hash(ix, iy) < (rough - .94) / .1) return 0;
-  const fine = hash(ix, iy), ax = Math.abs(x), ay = Math.abs(y);
-  if (ax <= APRON_X && ay <= APRON_Y) {
-    kinds[i] = KIND_CLAY;
-    const baseline = Math.abs(ax - COURT_X) < .09 && ay <= COURT_Y + .09;
-    const sideline = Math.abs(ay - COURT_Y) < .09 && ax <= COURT_X;
-    const service = Math.abs(ax - SERVICE_X) < .07 && ay <= COURT_Y;
-    const centre = ay < .07 && ax <= SERVICE_X;
-    if ((baseline || sideline || service || centre) && fine > .07) return LINE;
-    // the baselines wear pale where players run, and the rest stays in close tones so dither never reads as a checkerboard
-    const wear = Math.max(0, 1 - Math.abs(ax - BASE_X) / 1.4) * Math.max(0, 1 - ay / 6) * .34;
-    const v = .46 + (noise(x * .6, y * .7) - .5) * .6 + wear + Math.sin(y * 4 + noise(x * .3, y) * 3) * .04;
-    if (fine > .985) return rampOf(CLAY)[4];
-    return rgb(...CLAY_TONES[clamp(Math.floor(v * 4 + (bayerAt(ix, iy) - .5) * .6), 0, 3)]);
-  }
-  const dirt = Math.max(ax - APRON_X, ay - APRON_Y);
-  if (dirt < .2 + noise(x * 2.2, y * 2.2) * .8) {
-    kinds[i] = KIND_DIRT;
-    return rampOf(DIRT)[clamp(Math.floor(1.5 + (.25 + noise(x * 3, y * 3) * .6) * 2.4 + (bayerAt(ix, iy) - .5) * .9), 1, 4)];
-  }
-  kinds[i] = KIND_GRASS;
-  const t = noise(x * .9, y * .9) * 1.15 + (fine - .5) * .55 - .08;
-  return rgb(...GRASS[clamp(Math.floor(t * 4.2), 0, 3)]);
-}
-function fence(x0, y0, x1, y1) {
-  const wire = rgb(116, 122, 116), steel = [92, 96, 94];
-  const len = Math.hypot(x1 - x0, y1 - y0);
-  for (let a = 0; a <= len; a += .035) for (let z = 0; z <= FENCE_Z; z += .035) {
-    const f = (a + z) * 1.5, g = (a - z) * 1.5;
-    if (f - Math.floor(f) > .11 && g - Math.floor(g) > .11) continue;
-    const t = a / len;
-    plot(lerp(x0, x1, t), lerp(y0, y1, t), z, wire);
-  }
-  for (let a = 0; a <= len + .01; a += 4) {
-    const t = a / len, x = lerp(x0, x1, t), y = lerp(y0, y1, t);
-    box(x - .07, y - .07, 0, x + .07, y + .07, FENCE_Z, steel, a | 0);
-    castShadow(x, y, 1.2, .1);
-  }
-  capsule([x0, y0, FENCE_Z], [x1, y1, FENCE_Z], .05, .05, () => steel, 'solid');
-}
-function bake() {
-  zb.fill(-1e9);
-  pix.fill(rgb(255, 255, 255));
-  for (let iy = 0; iy < H; iy++) for (let ix = 0; ix < W; ix++) {
-    const g = unproject(ix + .5, iy + .5), i = iy * W + ix, c = groundColor(g.x, g.y, ix, iy, i);
-    if (!c) continue;
-    pix[i] = c; ground[i] = 1;
-    zb[i] = (g.x + g.y) / R2 * COS;
-  }
-  growGrass();
-  groundZ.set(zb);
-
-  growTree(-15, 2.6, .9, 300);
-  growTree(3, -10.3, .8, 260, 500);
-  fence(FENCE_X, FENCE_Y, 13.2, FENCE_Y);
-  fence(FENCE_X, FENCE_Y, FENCE_X, 8.4);
-
-  // net: a mesh of single pixels under a white tape, so the ball stays visible behind it
-  const netWire = rgb(58, 60, 62), tape = rgb(248, 244, 232);
-  for (let y = -NET_Y; y <= NET_Y; y += .03) for (let z = .02; z <= NET_Z; z += .03) {
-    const top = z > NET_Z - .13, f = y * 2.8, g = z * 3.4;
-    if (top) plot(0, y, z, tape);
-    else if (f - Math.floor(f) < .2 || g - Math.floor(g) < .24) plot(0, y, z, netWire);
-  }
-  for (const y of [-NET_Y, NET_Y]) box(-.08, y - .08, 0, .08, y + .08, NET_Z + .1, [44, 58, 54], y | 0);
-  for (let y = -NET_Y; y <= NET_Y; y += .15) castShadow(0, y, .75, .09, 1, .5);
-
-  // umpire on a high chair beside the net
-  const chair = [130, 92, 56], chairDark = [96, 68, 44];
-  for (const [x, y] of [[-.45, -7.1], [.45, -7.1], [-.45, -6.2], [.45, -6.2]]) box(x - .06, y - .06, 0, x + .06, y + .06, 1.7, chairDark, x * 5 | 0);
-  box(-.55, -7.2, 1.7, .55, -6.1, 1.8, chair, 2);
-  for (let z = .5; z < 1.7; z += .45) box(-.45, -6.2, z, .45, -6.14, z + .06, chairDark, 3);
-  pendingShadows.length = 0;
-  figure(0, -6.7, Math.PI / 2, { z: 1.8, scale: .85, armR: .4, armL: .3, stance: .04 }, { shirt: [60, 74, 74], stripe: [60, 74, 74], legs: [44, 44, 52], hair: [160, 152, 140], skin: [212, 166, 130] }, dynamicAdd);
-  for (let z = 0; z < 1.8; z += .3) castShadow(0, -6.65, z, .45);
-
-  // bench, bags and a basket of spare balls on the far side
-  const seat = [156, 112, 66];
-  box(-9.4, -8.5, .6, -5.2, -7.9, .72, seat, 7);
-  box(-9.4, -8.55, .9, -5.2, -8.45, 1.45, [132, 92, 54], 8);
-  for (const x of [-9.2, -5.5]) box(x, -8.45, 0, x + .14, -7.95, .6, [60, 56, 54], 9);
-  for (let x = -9.2; x <= -5.4; x += .3) castShadow(x, -8.2, .66, .28);
-  box(-8.6, -8.3, .72, -7.5, -7.95, 1.05, [64, 104, 92], 10);
-  capsule([-6.2, -8.2, .8], [-6.2, -8.2, 1.25], .13, .1, () => [226, 226, 218], 'gloss');
-  box(-3.9, -8.4, 0, -3, -7.6, .7, [120, 124, 118], 11);
-  castShadow(-3.45, -8, .4, .55);
-  for (let k = 0; k < 9; k++) sphere(-3.75 + hash(k, 3) * .6, -8.25 + hash(k, 4) * .5, .78, BALL_R * .85, BALL_COLOR, 'gloss');
-  flushShadows();
-  bakeOcclusion();
-  staticShadow.set(shadowMask);
-  applyShadows(groundZ);
-
-  pristinePix.set(pix);
-  bakedPix.set(pix);
-  bakedZ.set(zb);
-}
-const pristinePix = new Uint32Array(W * H);
-
-/* ---------- game state ---------- */
 const G = {
   phase: 'serve-wait', score: [0, 0], first: 0, server: 0, faults: 0, side: 1, rally: 0, longest: 0,
-  ball: null, timer: 0, time: 0, status: '', clap: 0, spark: 0, sparkAt: null, dust: [], lockout: 0,
+  ball: null, timer: 0, time: 0, status: '', clap: 0, spark: 0, sparkAt: null, dust: [], marks: [], lockout: 0,
   who: [
     { x: BASE_X, y: 0, swing: -1, serving: false, moved: 0, dir: Math.PI },
     { x: -BASE_X, y: 0, swing: -1, serving: false, moved: 0, dir: 0, stretch: 0, react: 0, tx: -BASE_X, ty: 0 },
@@ -208,7 +348,8 @@ function setStatus(text) {
 const totalPoints = () => G.score[0] + G.score[1];
 const pace = () => clamp(G.rally / PACE_RALLY, 0, 1);
 
-/* ---------- points ---------- */
+/* ---------- Points & physics ---------- */
+
 function startPoint() {
   const n = totalPoints();
   G.server = (G.first + Math.floor((n + 1) / 2)) % 2;
@@ -249,7 +390,7 @@ function strike(by, x, y, T, kind) {
   shot.wS = shot.tc - W / 2; shot.wE = shot.tc + W / 2;
   G.ball = shot;
   hitter.swing = .35; hitter.serving = kind === 'serve';
-  G.spark = .09; G.sparkAt = { x: b.x, y: b.y, z: b.z };
+  G.spark = .12; G.sparkAt = { x: b.x, y: b.y, z: b.z };
   G.rally++;
   G.longest = Math.max(G.longest, G.rally);
   G.phase = 'rally';
@@ -263,7 +404,6 @@ function strike(by, x, y, T, kind) {
 function ballAt(b, t) {
   return { x: b.land.x + b.v2x * (t - b.T), y: b.land.y + b.v2y * (t - b.T) };
 }
-// the rival sets off after a beat and decides from how far it had to run how good its reply can be
 function planBot() {
   const b = G.ball, bot = G.who[1], c = ballAt(b, b.tc);
   bot.tx = c.x - REACH_X; bot.ty = c.y - REACH_Y;
@@ -287,7 +427,6 @@ function botReturn() {
   if (s < .55) strike(1, lerp(6.5, 8.2, Math.random()), side * (2.8 + Math.random() * 1.5), Math.max(FAST_T - .06, T - .06), 'rally');
   else strike(1, lerp(6.5, 8.2, Math.random()), (Math.random() - .5) * 3.6, T + .15, 'rally');
 }
-// where a shot hit right now would land; null when the player cannot hit
 function aim() {
   const b = G.ball;
   if (G.phase === 'toss' && G.server === 0) {
@@ -346,28 +485,19 @@ function resetMatch() {
   G.score = [0, 0];
   G.first = 1 - G.first;
   G.longest = 0;
-  bakedPix.set(pristinePix);
+  G.marks = [];
   startPoint();
-}
-
-/* ---------- physics ---------- */
-function markClay(x, y) {
-  const p = project(x, y, 0);
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) {
-    if (Math.abs(dx) === 2 && dy) continue;
-    const ix = (p.sx | 0) + dx, iy = (p.sy | 0) + dy;
-    if (ix < 0 || iy < 0 || ix >= W || iy >= H) continue;
-    const i = iy * W + ix;
-    if (kinds[i] !== KIND_CLAY || bakedPix[i] === LINE) continue;
-    const c = bakedPix[i];
-    bakedPix[i] = rgb((c & 255) * .88, (c >> 8 & 255) * .84, (c >> 16 & 255) * .82);
-  }
 }
 function land(b) {
   b.landed = true;
-  markClay(b.x, b.y);
+  if (Math.abs(b.x) <= APRON_X && Math.abs(b.y) <= APRON_Y) {
+    G.marks.push([b.x, b.y]);
+    if (G.marks.length > 40) G.marks.shift();
+  }
   sound('bounce', .7);
-  for (let k = 0; k < 6; k++) G.dust.push({ x: b.x, y: b.y, z: .1, vx: (Math.random() - .5) * 2.4 + b.vx * .06, vy: (Math.random() - .5) * 2.4 + b.vy * .06, vz: 1 + Math.random() * 1.4, life: .32 });
+  for (let k = 0; k < 6; k++) {
+    G.dust.push({ x: b.x, y: b.y, z: .1, vx: (Math.random() - .5) * 2.4 + b.vx * .06, vy: (Math.random() - .5) * 2.4 + b.vy * .06, vz: 1 + Math.random() * 1.4, life: .32 });
+  }
   if (b.judged || G.phase !== 'rally') return;
   b.judged = true;
   const far = b.by === 0 ? b.x < 0 : b.x > 0;
@@ -437,7 +567,7 @@ function update(dt) {
       const y = fails ? -G.side * (5.2 + Math.random()) : -G.side * lerp(.9, 3.9, Math.random());
       strike(1, SERVE_X, y, .82, 'serve');
     } else if (b.z < 1.15 && b.vz < 0) {
-      readyServe(); // an unhit toss is caught and costs nothing
+      readyServe();
     }
   } else if (G.phase === 'rally' && b) {
     b.t += dt;
@@ -467,96 +597,316 @@ function update(dt) {
     bot.moved = 0;
     if (G.phase === 'point-end' && G.timer > 1.7) startPoint();
   }
-  if (G.ball && !(G.ball.held)) for (let k = 0; k < 4; k++) stepBall(G.ball, dt / 4);
+  if (G.ball && !G.ball.held) for (let k = 0; k < 4; k++) stepBall(G.ball, dt / 4);
 }
 
-/* ---------- drawing ---------- */
-function poseOf(p, ready) {
-  const running = p.moved > 1.2;
-  const stride = running ? .16 + Math.sin(G.time * 15) * .2 : .2;
-  const base = { crouch: running ? .2 : .28, lean: running ? .24 : .18, stance: stride, armL: .55, armR: .5 };
-  let twist = 0;
-  if (p.swing >= 0) {
-    const t = ease(p.swing);
-    if (p.serving) return { pose: { crouch: .05, lean: lerp(-.1, .4, t), stance: .22, armR: lerp(3.5, .7, t), armL: lerp(2.4, .2, t) }, twist: lerp(.4, -.3, t) };
-    twist = lerp(.95, -.8, t);
-    return { pose: { ...base, crouch: .34, armR: lerp(-2, 2.6, t), armL: lerp(.9, .2, t) }, twist };
+/* ---------- Risograph court drawing ---------- */
+
+function drawTree(P, x, y, s, R) {
+  const [tx, ty] = iso(x, y, 0);
+  P.dot(tx, ty + 2, 22 * s, 'blue', 0.18, 0.45);
+  block(P, x - 0.22 * s, y - 0.22 * s, 0, x + 0.22 * s, y + 0.22 * s, 2.1 * s, WOOD, { lw: 0.8 });
+  const [cx, cy] = iso(x, y, 2.7 * s);
+  const clusters = [[0, 0, 22], [-16, 6, 16], [16, 5, 17], [-6, -13, 16], [10, -11, 15], [0, 11, 14]];
+  for (const [dx, dy, r] of clusters) {
+    blob(P, cx + dx * s, cy + dy * s, r * s, R() < 0.5 ? GREEN : LEAF, R, { shade: 0.08, lw: 0.85 });
   }
-  if (p.serving) {
-    const up = G.phase === 'toss' ? 1 : 0;
-    return { pose: { crouch: up * .12, lean: 0, stance: .22, armR: up ? 3.6 : .4, armL: up ? 2.8 : .75 }, twist: up * .45 };
+}
+
+function drawFence(P, x0, y0, x1, y1) {
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  // Subtle mesh lines
+  const posts = Math.ceil(len / 4);
+  for (let k = 0; k <= Math.ceil(len / 1.1); k++) {
+    const t = k / Math.ceil(len / 1.1);
+    const x = lerp(x0, x1, t), y = lerp(y0, y1, t);
+    P.line([iso(x, y, 0), iso(x, y, FENCE_Z)], 0.45, 'blue', false, 0.25);
   }
-  if (ready) return { pose: { ...base, crouch: .36, armR: -2, armL: .9 }, twist: .9 };
-  return { pose: base, twist: 0 };
+  for (let z = 0.65; z < FENCE_Z; z += 0.65) {
+    P.line([iso(x0, y0, z), iso(x1, y1, z)], 0.45, 'blue', false, 0.25);
+  }
+  for (let k = 0; k <= posts; k++) {
+    const t = k / posts, x = lerp(x0, x1, t), y = lerp(y0, y1, t);
+    P.line([iso(x, y, 0), iso(x, y, FENCE_Z)], 1.6, 'blue', false, 0.25);
+  }
+  P.line([iso(x0, y0, FENCE_Z), iso(x1, y1, FENCE_Z)], 1.6, 'blue', false, 0.3);
 }
-function drawPlayer(i) {
-  const p = G.who[i], b = G.ball;
-  const ready = b && !b.held && !b.hit && b.by === 1 - i && G.phase === 'rally' && b.t > (i === 0 ? b.wS : b.tc - .28) - .08;
-  const { pose, twist } = poseOf(p, ready);
-  const yaw = p.dir + twist * (i === 0 ? 1 : -1);
-  const hand = figure(p.x, p.y, yaw, pose, TEAM[i], dynamicAdd);
-  const a = (pose.armR || 0) + .18, fx = Math.cos(yaw), fy = Math.sin(yaw);
-  const dx = fx * Math.sin(a) - fy * .2, dy = fy * Math.sin(a) + fx * .2, dz = -Math.cos(a);
-  const neck = [hand[0] + dx * .32, hand[1] + dy * .32, hand[2] + dz * .32];
-  const head = [hand[0] + dx * .66, hand[1] + dy * .66, hand[2] + dz * .66];
-  dynamicAdd(hand, neck, .05, .05, () => TEAM[i].racket);
-  dynamicAdd(head, head, .22, .22, () => TEAM[i].racket);
-  sphere(head[0], head[1], head[2] + .04, .13, [236, 228, 200], 'solid');
+
+function drawFigure(P, x, y, z, o = {}) {
+  const s = o.s || 0.82, t = o.t || 0, run = o.run || false;
+  const [fx, fy] = iso(x, y, z);
+  P.dot(fx, fy, 7.5 * s, 'blue', 0.22, 0.42);
+  const sit = o.sit || false;
+  const step = run ? Math.sin(t * 14) * 3.5 * s : 0;
+  const hip = fy - (sit ? 7 : 11.5) * s, neck = hip - 10.5 * s, hy = neck - 5 * s;
+  if (sit) {
+    P.line([[fx - 2 * s, hip], [fx + 3 * s, hip + 2 * s], [fx + 3 * s, fy]], 2.6 * s, 'blue', false, 0.15);
+    P.line([[fx + 1.5 * s, hip], [fx + 6 * s, hip + 2 * s], [fx + 6 * s, fy - 1 * s]], 2.6 * s, 'blue', false, 0.15);
+  } else {
+    P.line([[fx - 2 * s, hip], [fx - 2 * s + step, fy]], 2.6 * s, 'blue', false, 0.15);
+    P.line([[fx + 2 * s, hip], [fx + 2 * s - step, fy]], 2.6 * s, 'blue', false, 0.15);
+  }
+  const body = [[fx - 4.6 * s, hip + s], [fx + 4.6 * s, hip + s], [fx + 3.8 * s, neck], [fx - 3.8 * s, neck]];
+  shape(P, body, o.shirt || RED, { shade: 0.08, lw: 0.85 });
+
+  const swing = o.swing ?? -1;
+  const up = o.armsUp ? 9 * s : 0;
+  const face = o.face ?? 1;
+  let rx = fx + 6 * s * face, ry = hip - 1.5 * s - up;
+  let lx = fx - 5.5 * s * face, ly = hip - 1.5 * s - up;
+  if (swing >= 0) {
+    const a = ease(swing);
+    if (o.serving) {
+      rx = fx + lerp(-2, 8, a) * s * face;
+      ry = neck + lerp(-12, 2, a) * s;
+    } else {
+      rx = fx + lerp(-7, 9, a) * s * face;
+      ry = neck + lerp(4, -4, a) * s;
+    }
+  } else if (o.ready) {
+    rx = fx - 6.5 * s * face;
+    ry = neck + 4 * s;
+  } else if (o.serving && G.phase === 'toss') {
+    rx = fx - 2 * s * face;
+    ry = neck - 10 * s;
+    lx = fx + 4 * s * face;
+    ly = neck - 9 * s;
+  }
+
+  P.line([[fx - 3.8 * s * face, neck + 1.5 * s], [lx, ly]], 2 * s, 'blue', false, 0.15);
+  P.line([[fx + 3.8 * s * face, neck + 1.5 * s], [rx, ry]], 2 * s, 'blue', false, 0.15);
+
+  if (o.racket) {
+    const dx = (rx - fx) * 0.75 + 4 * s * face;
+    const dy = (ry - neck) * 0.65 - 4 * s;
+    const hdx = rx + dx, hdy = ry + dy;
+    P.line([[rx, ry], [hdx, hdy]], 1.4, o.racket, false, 0.1);
+    shape(P, ellipse(hdx, hdy, 4.2 * s, 5.2 * s, 10), [], { lw: 1.1, amp: 0.15 });
+    P.line([[hdx - 2.5 * s, hdy], [hdx + 2.5 * s, hdy]], 0.5, 'blue', false, 0.08);
+    P.line([[hdx, hdy - 3.2 * s], [hdx, hdy + 3.2 * s]], 0.5, 'blue', false, 0.08);
+  }
+
+  const head = circle(fx, hy, 4.5 * s, 12);
+  P.knock(head);
+  P.fill(head, 'coral', 0.2);
+  P.line(head, 0.85, 'blue', true, 0.15);
+  const hair = [];
+  for (let k = 0; k <= 8; k++) {
+    const a = Math.PI + Math.PI * k / 8;
+    hair.push([fx + Math.cos(a) * 4.8 * s, hy - 0.5 * s + Math.sin(a) * 4.8 * s]);
+  }
+  shape(P, hair, o.hair || [['blue', 0.85]], { lw: 0.65 });
 }
-function drawCrowd() {
-  const b = G.ball, cx = b ? b.x : 0, cy = b ? b.y : 0, clapping = G.clap > 0;
+
+function drawCourtBase(P, R) {
+  // Grass slab with thickness (just like houses.js floor shell)
+  block(P, -15.6, -10.4, -0.55, 15.6, 10.4, 0, [['coral', 0.35], ['sun', 0.3]], { top: GREEN, lw: 1 });
+  for (let n = 0; n < 320; n++) {
+    const gx = -15.2 + R() * 30.4, gy = -10 + R() * 20;
+    if (Math.abs(gx) < APRON_X + 0.3 && Math.abs(gy) < APRON_Y + 0.3) continue;
+    const [px, py] = iso(gx, gy, 0);
+    P.line([[px, py], [px + (R() - 0.5) * 2, py - 2.5 - R() * 2]], 0.7, R() < 0.6 ? 'teal' : 'sun', false, 0.1);
+  }
+
+  // Clay apron + subtle worn baseline bands
+  shape(P, flat(-APRON_X, -APRON_Y, 0.01, APRON_X, APRON_Y), CLAY, { lw: 0.9 });
+  P.fill(flat(-COURT_X - 1, -COURT_Y, 0.01, -COURT_X + 1.2, COURT_Y), 'sun', 0.14);
+  P.fill(flat(COURT_X - 1.2, -COURT_Y, 0.01, COURT_X + 1, COURT_Y), 'sun', 0.14);
+
+  // Crisp chalk court lines
+  P.chalk(flat(-COURT_X, -COURT_Y, 0.02, COURT_X, COURT_Y), 2, true);
+  P.chalk([iso(-SERVICE_X, -COURT_Y, 0.02), iso(-SERVICE_X, COURT_Y, 0.02)], 1.6);
+  P.chalk([iso(SERVICE_X, -COURT_Y, 0.02), iso(SERVICE_X, COURT_Y, 0.02)], 1.6);
+  P.chalk([iso(-SERVICE_X, 0, 0.02), iso(SERVICE_X, 0, 0.02)], 1.6);
+
+  // Trees & fences along the back edges
+  drawTree(P, -14.8, 2.6, 1.05, R);
+  drawTree(P, 3.0, -9.8, 0.9, R);
+  drawFence(P, FENCE_X, FENCE_Y, 13.2, FENCE_Y);
+  drawFence(P, FENCE_X, FENCE_Y, FENCE_X, 8.4);
+
+  // Bench, gear bag, bottle, and ball basket
+  block(P, -9.4, -8.5, 0.6, -5.2, -7.9, 0.75, WOOD, { lw: 0.7 });
+  block(P, -9.4, -8.55, 0.9, -5.2, -8.42, 1.45, WOOD, { lw: 0.7 });
+  for (const x of [-9.2, -5.5]) block(P, x, -8.45, 0, x + 0.18, -7.95, 0.6, [['blue', 0.7]], { lw: 0.6 });
+  block(P, -8.6, -8.3, 0.75, -7.5, -7.95, 1.12, [['teal', 0.7]], { lw: 0.6 });
+  block(P, -3.9, -8.4, 0, -3.0, -7.6, 0.75, [['blue', 0.25]], { lw: 0.7 });
+  for (let k = 0; k < 6; k++) {
+    const [bx, by] = iso(-3.7 + (k % 3) * 0.25, -8.2 + Math.floor(k / 3) * 0.28, 0.85);
+    shape(P, circle(bx, by, 2.5, 8), [['sun', 0.95]], { lw: 0.5, amp: 0.1 });
+  }
+
+  // Umpire high chair
+  for (const [lx, ly] of [[-0.45, -7.1], [0.45, -7.1], [-0.45, -6.2], [0.45, -6.2]]) {
+    P.line([iso(lx, ly, 0), iso(lx, ly, 1.7)], 1.4, 'blue', false, 0.15);
+  }
+  block(P, -0.58, -7.2, 1.7, 0.58, -6.1, 1.85, WOOD, { lw: 0.7 });
+  drawFigure(P, 0, -6.65, 1.85, { s: 0.72, sit: true, shirt: [['teal', 0.5], ['blue', 0.4]], hair: [['blue', 0.35]] });
+}
+
+function drawNet(P) {
+  // Net shadow on clay
+  P.line([iso(0.25, -NET_Y, 0.02), iso(0.25, NET_Y, 0.02)], 3.5, 'blue', false, 0.2);
+  // Net mesh
+  for (let y = -NET_Y; y <= NET_Y; y += 0.65) {
+    P.line([iso(0, y, 0.05), iso(0, y, NET_Z)], 0.55, 'blue', false, 0.15);
+  }
+  for (let z = 0.25; z < NET_Z; z += 0.28) {
+    P.line([iso(0, -NET_Y, z), iso(0, NET_Y, z)], 0.55, 'blue', false, 0.15);
+  }
+  // White top tape & posts
+  P.chalk([iso(0, -NET_Y, NET_Z), iso(0, NET_Y, NET_Z)], 2.6);
+  P.line([iso(0, -NET_Y, NET_Z), iso(0, NET_Y, NET_Z)], 0.6, 'blue', false, 0.15);
+  for (const y of [-NET_Y, NET_Y]) {
+    block(P, -0.1, y - 0.1, 0, 0.1, y + 0.1, NET_Z + 0.12, [['blue', 0.8]], { lw: 0.7 });
+  }
+}
+
+function drawTarget(P, target) {
+  const [x, y] = iso(target.x, target.y, 0.03);
+  const ok = isIn(target);
+  const ring = ellipse(x, y, 11, 5.5, 18);
+  if (ok) {
+    P.line(ring, 4.2, 'sun', true, 0.2);
+    P.line(ring, 1.2, 'blue', true, 0.15);
+    P.dot(x, y, 2.4, 'sun', 1);
+  } else {
+    P.chalk(ring, 3.2, true);
+    P.line(ring, 1.8, 'blue', true, 0.2);
+    P.dot(x, y, 2.2, 'blue', 0.9);
+  }
+}
+
+function drawLive(P, t) {
+  // Clay bounce scuff marks
+  for (const [mx, my] of G.marks) {
+    const [sx, sy] = iso(mx, my, 0.02);
+    P.dot(sx, sy, 2.4, 'blue', 0.16, 0.5);
+  }
+
+  // Crowd along the far fence
+  const clapping = G.clap > 0;
   CROWD.forEach((c, k) => {
-    // heads follow the ball in coarse steps, like a crowd at a real match
-    const yaw = Math.round(Math.atan2(cy + 8.1, cx - c.x) / .35) * .35;
-    const beat = clapping && Math.floor(G.time * 9 + k * 1.6) % 2;
-    figure(c.x, -8.1, yaw, { scale: .85, stance: .06, armR: clapping ? (beat ? 1.5 : 1.15) : .1, armL: clapping ? (beat ? 1.5 : 1.15) : .12 }, c, dynamicAdd);
+    const beat = clapping && Math.floor(t * 9 + k * 1.6) % 2;
+    drawFigure(P, c.x, -8.0, 0, { t, s: 0.72, shirt: c.shirt, hair: c.hair, armsUp: beat });
   });
-}
-function drawTarget(t) {
-  const p = project(t.x, t.y, 0), ok = isIn(t), rx = 8, ry = 4;
-  const ring = [], outer = [];
-  for (let a = 0; a < 6.283; a += .12) {
-    ring.push([p.sx + Math.cos(a) * rx, p.sy + Math.sin(a) * ry], [p.sx + Math.cos(a) * (rx - 1), p.sy + Math.sin(a) * (ry - 1)]);
-    outer.push([p.sx + Math.cos(a) * (rx + 1), p.sy + Math.sin(a) * (ry + 1)]);
-  }
-  // yellow on black means in, black on white means out: red would vanish into the clay
-  drawDots(outer, ok ? INK : PAPER);
-  drawDots(ring, ok ? SIGNAL : INK);
-  drawDots([[p.sx, p.sy], [p.sx - 1, p.sy], [p.sx + 1, p.sy], [p.sx, p.sy - 1], [p.sx, p.sy + 1]], ok ? SIGNAL : INK);
-}
-function draw() {
-  pix.set(bakedPix);
-  zb.set(bakedZ);
-  pendingShadows.length = 0;
-  drawCrowd();
-  drawPlayer(1);
-  drawPlayer(0);
-  const b = G.ball;
-  if (b) {
-    sphere(b.x, b.y, b.z, BALL_R, BALL_COLOR, 'gloss');
-    castShadow(b.x, b.y, b.z - BALL_R, BALL_R * .96, 1, 0);
-    if (b.z < BALL_R + .3) castShadow(b.x, b.y, 0, BALL_R * .8, 2, 0);
-  }
-  const windT = STILL ? 0 : Math.floor(G.time * WIND_FPS) / WIND_FPS;
-  drawLeaves(windT);
-  drawTufts(windT);
-  flushShadows();
-  applyShadows(bakedZ);
-  shadeEdges();
-  const dust = G.dust.map(d => { const q = project(d.x, d.y, d.z); return [q.sx, q.sy]; });
-  drawDots(dust, rgb(224, 170, 130));
-  if (G.spark > 0 && G.sparkAt) {
-    const q = project(G.sparkAt.x, G.sparkAt.y, G.sparkAt.z), dots = [];
-    for (const r of [3, 4]) dots.push([q.sx - r, q.sy], [q.sx + r, q.sy], [q.sx, q.sy - r], [q.sx, q.sy + r]);
-    drawDots(dots, PAPER);
-  }
+
+  // Target aim ring (drawn on court under players)
   const target = aim();
-  if (target) drawTarget(target);
-  ctx.putImageData(image, 0, 0);
+  if (target) drawTarget(P, target);
+
+  // Rival (far side of net)
+  const bot = G.who[1], b = G.ball;
+  const botReady = b && !b.held && !b.hit && b.by === 0 && G.phase === 'rally' && b.t > b.tc - 0.36;
+  drawFigure(P, bot.x, bot.y, 0, {
+    t, s: 0.85, run: bot.moved > 1.2, swing: bot.swing, serving: bot.serving,
+    ready: botReady, face: 1, shirt: TEAM[1].shirt, hair: TEAM[1].hair, racket: TEAM[1].racket,
+  });
+
+  // Ball if on far side of net
+  const drawBall = () => {
+    if (!b) return;
+    const [sx, sy] = iso(b.x, b.y, 0.02);
+    P.dot(sx, sy, clamp(4.5 * (1 - b.z / 7), 1.8, 4.5), 'blue', 0.3, 0.45);
+    const [bx, by] = iso(b.x, b.y, b.z);
+    shape(P, circle(bx, by, 3.6, 10), [['sun', 1]], { lw: 0.85, amp: 0.1 });
+  };
+  if (b && b.x < 0) drawBall();
+
+  // Net sits between rival and player
+  drawNet(P);
+
+  // Ball if on near side of net
+  if (b && b.x >= 0) drawBall();
+
+  // Player (near side)
+  const me = G.who[0];
+  const meReady = b && !b.held && !b.hit && b.by === 1 && G.phase === 'rally' && b.t > b.wS - 0.08;
+  drawFigure(P, me.x, me.y, 0, {
+    t, s: 0.88, run: me.moved > 1.2, swing: me.swing, serving: me.serving,
+    ready: meReady, face: -1, shirt: TEAM[0].shirt, hair: TEAM[0].hair, racket: TEAM[0].racket,
+  });
+
+  // Clay dust puffs
+  for (const d of G.dust) {
+    const [dx, dy] = iso(d.x, d.y, d.z);
+    P.dot(dx, dy, 1.8, 'coral', 0.55);
+  }
+
+  // Hit spark
+  if (G.spark > 0 && G.sparkAt) {
+    const [qx, qy] = iso(G.sparkAt.x, G.sparkAt.y, G.sparkAt.z);
+    for (let k = 0; k < 6; k++) {
+      const a = k * TAU / 6 + 0.3;
+      P.line([[qx + Math.cos(a) * 4, qy + Math.sin(a) * 4], [qx + Math.cos(a) * 10, qy + Math.sin(a) * 10]], 1.4, 'sun', false, 0.1);
+    }
+  }
 }
 
-/* ---------- input ---------- */
-canvas.addEventListener('pointerdown', e => {
+/* ---------- Viewport, cache & loop ---------- */
+
+const corners = [];
+for (const x of [-16.2, 16.2]) for (const y of [-10.8, 10.8]) for (const z of [-0.6, 4.2]) corners.push(iso(x, y, z));
+const X0 = Math.min(...corners.map(p => p[0])) - 18;
+const X1 = Math.max(...corners.map(p => p[0])) + 18;
+const Y0 = Math.min(...corners.map(p => p[1])) - 18;
+const Y1 = Math.max(...corners.map(p => p[1])) + 18;
+const BW = X1 - X0, BH = Y1 - Y0;
+
+let scale = 1, ox = 0, oy = 0, baseCache = new Map();
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function fit() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const vw = Math.max(1, window.innerWidth);
+  const vh = Math.max(1, window.innerHeight);
+  canvas.width = Math.round(vw * dpr);
+  canvas.height = Math.round(vh * dpr);
+  scale = Math.min(canvas.width / BW, canvas.height / BH) * 0.96;
+  ox = (canvas.width - BW * scale) / 2 - X0 * scale;
+  oy = (canvas.height - BH * scale) / 2 - Y0 * scale;
+  baseCache = new Map();
+}
+
+function getBase(boil) {
+  let cv = baseCache.get(boil);
+  if (cv) return cv;
+  cv = document.createElement('canvas');
+  cv.width = canvas.width;
+  cv.height = canvas.height;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#fff';
+  c.fillRect(0, 0, cv.width, cv.height);
+  c.setTransform(scale, 0, 0, scale, ox, oy);
+  drawCourtBase(Pen(c, hash('court', boil)), rand(hash('court', 'layout')));
+  baseCache.set(boil, cv);
+  return cv;
+}
+
+function draw() {
+  const boil = reducedMotion ? 0 : Math.floor(G.time * 4) % 3;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(getBase(boil), 0, 0);
+
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+  drawLive(Pen(ctx, hash('live', boil)), G.time);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+
+  let night = false;
+  try { night = localStorage.getItem('theme') === 'night'; } catch (e) {}
+  if (night) {
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = '#b9c0e0';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+/* ---------- Input ---------- */
+
+canvas.addEventListener('pointerdown', () => {
   canvas.focus({ preventScroll: true });
   tap();
 });
@@ -566,7 +916,8 @@ canvas.addEventListener('keydown', e => {
   if (!e.repeat) tap();
 });
 
-/* ---------- sound ---------- */
+/* ---------- Sound ---------- */
+
 let audio = null, muted = false, noiseBuffer = null;
 function ensureAudio() {
   if (audio) { if (audio.state === 'suspended') audio.resume(); return; }
@@ -616,10 +967,10 @@ muteButton.addEventListener('click', () => {
   muteButton.setAttribute('aria-pressed', String(muted));
 });
 
-/* ---------- boot ---------- */
+/* ---------- Boot ---------- */
+
 addEventListener('resize', fit);
 fit();
-bake();
 startPoint();
 let last = performance.now();
 function frame(now) {

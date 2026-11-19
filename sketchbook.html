@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sketchbook - Sambhab Mishra</title>
+    <link rel="stylesheet" href="style.css">
+    <script>try { if (localStorage.getItem('theme') === 'night') document.documentElement.classList.add('night'); } catch (e) {}</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        html, body.subpage.sketch-body {
+            background: #ffffff;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        html.night body.subpage.sketch-body {
+            background: var(--night);
+        }
+
+        .sketch-wrap {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sketch-top {
+            padding: 1rem 1.5rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sketch-main {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem 1.25rem;
+            user-select: none;
+        }
+
+        .stage-wrap {
+            position: relative;
+            width: min(100%, 1060px);
+            aspect-ratio: 16 / 10.6;
+            max-height: calc(100vh - 175px);
+            min-height: 360px;
+        }
+
+        #book-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            cursor: grab;
+        }
+
+        #book-canvas:active { cursor: grabbing; }
+
+        /* Riso-styled draggable magnifying glass */
+        .loupe {
+            position: absolute;
+            width: 124px;
+            height: 124px;
+            z-index: 20;
+            cursor: grab;
+            touch-action: none;
+            transition: opacity 0.2s ease, transform 0.14s ease;
+        }
+
+        .loupe:active { cursor: grabbing; transform: scale(1.03); }
+        .loupe.hidden { opacity: 0; pointer-events: none; }
+
+        .loupe-lens {
+            position: absolute;
+            inset: 6px;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.55);
+            background-repeat: no-repeat;
+            pointer-events: none;
+        }
+
+        #loupe-riso {
+            position: absolute;
+            left: -18px;
+            top: -18px;
+            width: 196px;
+            height: 196px;
+            pointer-events: none;
+        }
+
+        /* Minimal icon controls */
+        .book-nav {
+            margin-top: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        .nav-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 34px;
+            min-width: 38px;
+            padding: 0 0.75rem;
+            font: inherit;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #2e4682;
+            background: #ffffff;
+            border: 1.5px solid #2e4682;
+            border-radius: 7px;
+            box-shadow: 3px 3px 0 #2e4682;
+            cursor: pointer;
+            transition: transform 0.14s ease, box-shadow 0.14s ease;
+        }
+
+        .nav-pill:hover:not(:disabled) {
+            transform: translate(-1px, -1px);
+            box-shadow: 4px 4px 0 #2e4682;
+        }
+
+        .nav-pill:active:not(:disabled) {
+            transform: translate(2px, 2px);
+            box-shadow: 1px 1px 0 #2e4682;
+        }
+
+        .nav-pill:disabled {
+            opacity: 0.32;
+            cursor: not-allowed;
+        }
+
+        .nav-pill.on {
+            background: #ffcc2e;
+            color: #2e4682;
+        }
+
+        .spread-count {
+            min-width: 4.5rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #6b7b8e;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .subpage.sketch-body .site-footer {
+            max-width: none;
+            width: 100%;
+            margin: 0;
+            padding: 0.85rem 1.5rem;
+        }
+
+        @media (max-width: 640px) {
+            .stage-wrap { min-height: 260px; }
+            .loupe { width: 92px; height: 92px; }
+            #loupe-riso { left: -14px; top: -14px; width: 148px; height: 148px; }
+        }
+    </style>
+</head>
+
+<body class="subpage sketch-body">
+    <div class="sketch-wrap">
+        <div class="sketch-top">
+            <a href="index.html" class="btn-back">← Back to Home</a>
+        </div>
+
+        <main class="sketch-main">
+            <div class="stage-wrap" id="stage-wrap">
+                <canvas id="book-canvas" aria-label="Interactive sketchbook"></canvas>
+                <div class="loupe hidden" id="loupe" aria-label="Magnifying glass">
+                    <div class="loupe-lens" id="loupe-lens"></div>
+                    <canvas id="loupe-riso" aria-hidden="true"></canvas>
+                </div>
+            </div>
+
+            <div class="book-nav" aria-label="Page controls">
+                <button type="button" class="nav-pill" id="btn-prev" aria-label="Previous">←</button>
+                <span class="spread-count" id="spread-count">front</span>
+                <button type="button" class="nav-pill" id="btn-next" aria-label="Next">→</button>
+                <button type="button" class="nav-pill on" id="btn-loupe" aria-label="Toggle magnifying glass" aria-pressed="true">⌕</button>
+            </div>
+        </main>
+
+        <footer class="site-footer">
+            <span>© 2026 Sambhab Mishra</span>
+            <span class="footer-links">
+                <a href="mailto:Sambhabmishraofficial@gmail.com">Email</a> ·
+                <a href="https://x.com/Sambhab_Mishra" target="_blank" rel="noopener">X</a> ·
+                <a href="https://linkedin.com/in/sambhab-mishra-ସମ୍ଭବ-ମିଶ୍ର-4149431b5/" target="_blank" rel="noopener">LinkedIn</a> ·
+                <a href="https://en.wikipedia.org/wiki/Sambhab_Mishra" target="_blank" rel="noopener">Wikipedia</a>
+            </span>
+        </footer>
+    </div>
+
+    <script>
+        'use strict';
+
+        /* ---------- Paintings ---------- */
+
+        const IMAGE_URLS = [
+            'sketchbook/01-ram-altman.png',
+            'sketchbook/02-under-the-sky.png',
+            'sketchbook/03-myth-and-halo.jpg',
+            'sketchbook/04-cinema-night.jpg',
+            'sketchbook/05-into-the-fire.jpg',
+            'sketchbook/06-portrait-red.jpg',
+            'sketchbook/07-warm-light.jpg',
+            'sketchbook/08-great-minds.jpg',
+            'sketchbook/09-maa-kali.jpg',
+            'sketchbook/10-ikat-study.jpg',
+            'sketchbook/11-durga-puja.jpg',
+            'sketchbook/12-masks.jpg',
+            'sketchbook/13-eyes.jpg',
+        ];
+
+        const imgs = IMAGE_URLS.map(src => {
+            const im = new Image();
+            im.src = src;
+            return im;
+        });
+
+        // 16 book sides (0..15):
+        //  0 = front cover (right side when closed at state 0)
+        //  1 = Painting 1 (left of spread 1),  2 = Painting 2 (right of spread 1)
+        //  3 = Painting 3 (left of spread 2),  4 = Painting 4 (right of spread 2)
+        //  ...
+        // 13 = Painting 13 (left of spread 7), 14 = clean endpage (right of spread 7)
+        // 15 = back cover (left side when closed at state 8)
+        //
+        // Spread state s in 0..8:
+        //   left side  = 2*s - 1  (none when s = 0; back cover 15 when s = 8)
+        //   right side = 2*s      (front cover 0 when s = 0; none when s = 8)
+        const MAX_STATE = 8;
+        let state = 0;
+        let loupeOn = true;
+
+        const $ = id => document.getElementById(id);
+        const stageWrap = $('stage-wrap');
+        const canvas = $('book-canvas');
+        const ctx = canvas.getContext('2d');
+        const loupe = $('loupe');
+        const loupeLens = $('loupe-lens');
+        const loupeCanvas = $('loupe-riso');
+
+        /* ---------- Risograph Pen & Cover Cache (matching houses.js) ---------- */
+
+        const INK = { blue: [46, 70, 130], coral: [236, 100, 80], sun: [255, 204, 46], teal: [0, 138, 136] };
+        const SHIFT = { blue: [0.35, -0.25], coral: [-0.45, 0.3], sun: [0.25, 0.45], teal: [-0.3, -0.4] };
+        const ANGLE = { blue: 15, coral: 75, sun: 0, teal: 45 };
+        const TAU = Math.PI * 2;
+        const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+        function hash(s) {
+            let h = 2166136261;
+            for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619); }
+            return h >>> 0;
+        }
+        function rand(seed) {
+            let s = (seed >>> 0) || 1;
+            return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+        }
+
+        function makePen(c, seed) {
+            const R = rand(seed);
+            const pats = new Map();
+            function pat(ink, tone) {
+                const key = ink + tone;
+                if (pats.has(key)) return pats.get(key);
+                const cell = 12, cells = 6, size = cell * cells;
+                const cv = document.createElement('canvas');
+                cv.width = cv.height = size;
+                const g = cv.getContext('2d');
+                const r2 = rand(hash('p' + key));
+                g.fillStyle = rgba(INK[ink]);
+                for (let y = 0; y < cells; y++) for (let x = 0; x < cells; x++) {
+                    const rad = cell * Math.sqrt(tone / Math.PI) * (0.88 + r2() * 0.22);
+                    g.beginPath();
+                    g.arc((x + 0.5) * cell + (r2() - 0.5) * 2, (y + 0.5) * cell + (r2() - 0.5) * 2, rad, 0, TAU);
+                    g.fill();
+                }
+                const p = c.createPattern(cv, 'repeat');
+                if (p.setTransform) p.setTransform(new DOMMatrix().rotateSelf(ANGLE[ink]).scaleSelf(0.22));
+                pats.set(key, p);
+                return p;
+            }
+            function wobble(pts, closed, amp) {
+                const out = [], n = pts.length, segs = closed ? n : n - 1;
+                for (let s = 0; s < segs; s++) {
+                    const a = pts[s], b = pts[(s + 1) % n];
+                    const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+                    const steps = Math.max(1, Math.ceil(len / 9));
+                    const nx = -dy / len, ny = dx / len;
+                    for (let k = 0; k < steps; k++) {
+                        const t = k / steps, o = (R() - 0.5) * 2 * amp;
+                        out.push([a[0] + dx * t + nx * o, a[1] + dy * t + ny * o]);
+                    }
+                }
+                if (!closed) out.push(pts[n - 1]);
+                return out;
+            }
+            return {
+                fill(pts, ink, tone) {
+                    c.save();
+                    c.globalCompositeOperation = 'multiply';
+                    c.translate(SHIFT[ink][0], SHIFT[ink][1]);
+                    c.beginPath();
+                    pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
+                    c.closePath();
+                    c.fillStyle = pat(ink, tone);
+                    c.fill();
+                    c.restore();
+                },
+                line(pts, w = 1.6, ink = 'blue', closed = false, amp = 0.65) {
+                    if (pts.length < 2) return;
+                    const q = wobble(pts, closed, amp);
+                    c.save();
+                    c.globalCompositeOperation = 'multiply';
+                    c.translate(SHIFT[ink][0], SHIFT[ink][1]);
+                    c.strokeStyle = rgba(INK[ink], 0.94);
+                    c.lineWidth = w;
+                    c.lineCap = 'round';
+                    c.lineJoin = 'round';
+                    c.beginPath();
+                    q.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
+                    if (closed) c.closePath();
+                    c.stroke();
+                    c.restore();
+                },
+            };
+        }
+
+        const GLYPHS = {
+            m: { w: 12.5, s: [[[0.5,11],[1.1,5.2],[2.8,4.6],[4.6,5.8],[4.8,10.8]], [[4.8,6.6],[6.6,4.5],[8.4,5.6],[8.5,10.8]], [[8.5,6.6],[10.2,4.6],[11.6,6.0],[11.8,11]]] },
+            y: { w: 8.6, s: [[[1.2,5.0],[2.2,9.8],[4.4,10.4],[6.8,7.4]], [[7.2,4.8],[6.2,11.6],[4.4,14.8],[2.0,15.2],[1.4,13.6]]] },
+            s: { w: 7.4, s: [[[6.4,5.6],[4.2,4.4],[1.8,5.4],[1.8,7.2],[4.6,8.2],[6.4,9.6],[4.6,11.2],[1.4,10.8]]] },
+            k: { w: 7.8, s: [[[1.4,0.8],[1.2,11.0]], [[6.4,4.8],[1.6,8.0],[6.8,11.0]]] },
+            e: { w: 7.8, s: [[[1.4,8.0],[6.6,7.6],[6.6,5.4],[4.2,4.4],[1.6,5.8],[1.4,9.4],[3.6,11.2],[6.8,10.4]]] },
+            t: { w: 6.4, s: [[[3.2,1.4],[2.8,9.8],[4.2,11.0],[6.0,10.4]], [[0.8,5.0],[5.6,4.6]]] },
+            c: { w: 7.2, s: [[[6.4,5.6],[4.2,4.4],[1.6,6.0],[1.4,9.4],[3.8,11.2],[6.6,10.2]]] },
+            h: { w: 8.2, s: [[[1.4,0.8],[1.2,11.0]], [[1.4,7.2],[3.8,4.8],[6.4,5.6],[7.0,11.0]]] },
+            b: { w: 8.2, s: [[[1.4,0.8],[1.2,11.0]], [[1.4,6.4],[4.0,4.6],[6.8,6.2],[6.6,9.6],[4.0,11.2],[1.4,10.2]]] },
+            o: { w: 8.0, s: [[[4.2,4.5],[1.6,6.0],[1.4,9.4],[4.0,11.2],[6.8,9.6],[6.8,6.0],[4.2,4.5]]] },
+            S: { w: 9.0, s: [[[7.6,2.6],[4.8,1.2],[1.8,2.6],[1.8,5.2],[5.2,6.4],[7.8,8.4],[5.6,11.0],[1.6,10.4]]] },
+            M: { w: 12.2, s: [[[1.2,11.0],[1.6,1.6],[6.0,7.4],[10.4,1.6],[11.0,11.0]]] },
+            ' ': { w: 4.6, s: [] },
+        };
+
+        function drawHandwriting(P, text, cx, cy, scale, lw, ink = 'blue') {
+            const gap = 1.4;
+            let total = 0;
+            for (const ch of text) total += (GLYPHS[ch] ? GLYPHS[ch].w : 5) + gap;
+            total -= gap;
+            let x = cx - (total * scale) / 2;
+            const y0 = cy - 6.2 * scale;
+            for (let i = 0; i < text.length; i++) {
+                const g = GLYPHS[text[i]];
+                if (!g) { x += 5 * scale; continue; }
+                const yJ = Math.sin(i * 1.9) * 0.35 * scale;
+                for (const stroke of g.s) {
+                    const pts = stroke.map(([px, py]) => [
+                        x + px * scale + (6 - py) * scale * 0.08,
+                        y0 + py * scale + yJ - (x + px * scale - cx) * 0.01,
+                    ]);
+                    P.line(pts, lw, ink, false, 0.42);
+                }
+                x += (g.w + gap) * scale;
+            }
+        }
+
+        const coverCache = new Map();
+        function getCoverBitmap(isFront, pw, ph, boil) {
+            const w = Math.max(1, Math.round(pw)), h = Math.max(1, Math.round(ph));
+            const key = `${isFront ? 'F' : 'B'}|${w}|${h}|${boil}`;
+            if (coverCache.has(key)) return coverCache.get(key);
+
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            const cv = document.createElement('canvas');
+            cv.width = Math.round(w * dpr);
+            cv.height = Math.round(h * dpr);
+            const c = cv.getContext('2d');
+            c.setTransform(dpr, 0, 0, dpr, 0, 0);
+            c.fillStyle = '#fff';
+            c.fillRect(0, 0, w, h);
+
+            const P = makePen(c, hash(key));
+            const x0 = 2, y0 = 2, x1 = w - 2, y1 = h - 2;
+            const board = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+            P.fill(board, 'sun', 0.34);
+            P.fill(board, 'coral', 0.36);
+
+            const spW = Math.max(26, w * 0.088);
+            const sx0 = isFront ? x0 : x1 - spW;
+            const sx1 = isFront ? x0 + spW : x1;
+            P.fill([[sx0, y0], [sx1, y0], [sx1, y1], [sx0, y1]], 'blue', 0.58);
+            P.fill([[sx0, y0], [sx1, y0], [sx1, y1], [sx0, y1]], 'teal', 0.24);
+            P.line([[isFront ? sx1 : sx0, y0], [isFront ? sx1 : sx0, y1]], 1.7, 'blue', false, 0.5);
+
+            const stX = isFront ? sx1 + 6 : sx0 - 6;
+            for (let sy = y0 + 22; sy < y1 - 20; sy += 26) {
+                P.line([[stX - 4, sy], [stX + 4, sy]], 1.15, 'blue', false, 0.25);
+            }
+
+            const bandX = isFront ? x1 - Math.max(24, w * 0.072) : x0 + Math.max(14, w * 0.046);
+            const band = [[bandX, y0], [bandX + 11, y0], [bandX + 11, y1], [bandX, y1]];
+            P.fill(band, 'blue', 0.65);
+            P.line(band, 1.3, 'blue', true, 0.4);
+            P.line(board, 2.2, 'blue', true, 0.8);
+
+            if (isFront) {
+                const lw = Math.min(w * 0.68, 290), lh = Math.min(h * 0.22, 104);
+                const cx = (sx1 + bandX) / 2, cy = h * 0.46;
+                const lx0 = cx - lw / 2, ly0 = cy - lh / 2, lx1 = cx + lw / 2, ly1 = cy + lh / 2;
+                P.fill([[lx0 + 4, ly0 + 5], [lx1 + 4, ly0 + 5], [lx1 + 4, ly1 + 5], [lx0 + 4, ly1 + 5]], 'blue', 0.22);
+                c.fillStyle = '#fff';
+                c.fillRect(lx0, ly0, lw, lh);
+                P.line([[lx0, ly0], [lx1, ly0], [lx1, ly1], [lx0, ly1]], 1.8, 'blue', true, 0.55);
+                P.line([[lx0 + 6, ly0 + 6], [lx1 - 6, ly0 + 6], [lx1 - 6, ly1 - 6], [lx0 + 6, ly1 - 6]], 0.7, 'blue', true, 0.35);
+
+                const sc = Math.min(lw / 145, lh / 32);
+                drawHandwriting(P, 'my sketchbook', cx, cy - 3 * sc, sc, Math.max(1.8, sc * 1.15), 'blue');
+                const ux0 = cx - lw * 0.34, ux1 = cx + lw * 0.34, uy = cy + lh * 0.25;
+                P.line([[ux0, uy + 1.5], [cx - lw * 0.1, uy - 2], [cx + lw * 0.12, uy + 1.5], [ux1, uy - 1]], 2.1, 'coral', false, 0.5);
+            } else {
+                const cx = (bandX + 11 + sx0) / 2, cy = h * 0.5;
+                const rad = Math.min(w, h) * 0.088;
+                const ring = [];
+                for (let k = 0; k < 20; k++) {
+                    const a = k / 20 * TAU;
+                    ring.push([cx + Math.cos(a) * rad, cy + Math.sin(a) * rad]);
+                }
+                c.fillStyle = '#fff';
+                c.beginPath();
+                ring.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
+                c.closePath();
+                c.fill();
+                P.line(ring, 1.8, 'blue', true, 0.5);
+                drawHandwriting(P, 'SM', cx, cy + 1, rad / 14, 2.0, 'blue');
+            }
+
+            if (coverCache.size > 12) coverCache.clear();
+            coverCache.set(key, cv);
+            return cv;
+        }
+
+        /* ---------- Geometry & Page Drawing ---------- */
+
+        let CW = 1, CH = 1, DPR = 1;
+        let PW = 1, PH = 1, BX = 0, BY = 0; // Book top-left (BX, BY) when open; page size (PW, PH)
+        let bookShift = -0.5; // -0.5 = front cover centered, 0 = open spread centered, +0.5 = back cover centered
+
+        function layout() {
+            DPR = Math.min(2, window.devicePixelRatio || 1);
+            CW = Math.max(1, stageWrap.clientWidth);
+            CH = Math.max(1, stageWrap.clientHeight);
+            canvas.width = Math.round(CW * DPR);
+            canvas.height = Math.round(CH * DPR);
+
+            const padX = 28, padY = 22;
+            const maxW = CW - padX * 2, maxH = CH - padY * 2;
+            const ratio = 16 / 10.6;
+            let bw = maxW, bh = bw / ratio;
+            if (bh > maxH) { bh = maxH; bw = bh * ratio; }
+            PW = bw / 2;
+            PH = bh;
+            BX = (CW - bw) / 2;
+            BY = (CH - bh) / 2;
+        }
+
+        function targetShiftFor(st) {
+            if (st === 0) return -0.5;
+            if (st === MAX_STATE) return 0.5;
+            return 0;
+        }
+
+        // Draw any page side (0..15) inside rect (x, y, PW, PH)
+        function drawSide(side, x, y, boil) {
+            if (side < 0 || side > 15) return;
+            if (side === 0 || side === 15) {
+                const cv = getCoverBitmap(side === 0, PW, PH, boil);
+                ctx.drawImage(cv, x, y, PW, PH);
+                return;
+            }
+            // Crisp white paper page with subtle riso ink border
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x, y, PW, PH);
+            ctx.strokeStyle = 'rgba(46, 70, 130, 0.35)';
+            ctx.lineWidth = 1.25;
+            ctx.strokeRect(x + 0.5, y + 0.5, PW - 1, PH - 1);
+
+            const imgIdx = side - 1;
+            if (imgIdx >= 0 && imgIdx < imgs.length) {
+                const im = imgs[imgIdx];
+                if (im.complete && im.naturalWidth > 0) {
+                    const pad = Math.min(PW, PH) * 0.055;
+                    const aw = PW - pad * 2, ah = PH - pad * 2;
+                    const s = Math.min(aw / im.naturalWidth, ah / im.naturalHeight);
+                    const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+                    ctx.drawImage(im, x + (PW - dw) / 2, y + (PH - dh) / 2, dw, dh);
+                }
+            }
+
+            // Spine shadow gradient along the bound edge
+            const isLeft = side % 2 === 1;
+            const sg = isLeft
+                ? ctx.createLinearGradient(x + PW - 26, 0, x + PW, 0)
+                : ctx.createLinearGradient(x, 0, x + 26, 0);
+            sg.addColorStop(0, isLeft ? 'rgba(46,70,130,0)' : 'rgba(46,70,130,0.16)');
+            sg.addColorStop(1, isLeft ? 'rgba(46,70,130,0.16)' : 'rgba(46,70,130,0)');
+            ctx.fillStyle = sg;
+            ctx.fillRect(isLeft ? x + PW - 26 : x, y, 26, PH);
+        }
+
+        /* ---------- Real Physical Paper Fold Geometry ---------- */
+
+        // Active fold state (either user drag, hover corner-peel, or animated turn)
+        let fold = null; // { dir: +1|-1, topCorner: bool, fx, fy, anim?: {...}, hover?: bool }
+
+        // Keep folded corner pinned to the spine so paper never stretches or tears
+        function clampCorner(fx, fy, dir, topCorner) {
+            const spineX = PW;
+            const cy = topCorner ? 0 : PH;
+            const oy = topCorner ? PH : 0;
+
+            // Circle 1: distance from same-end spine corner <= PW
+            let dx = fx - spineX, dy = fy - cy;
+            let d = Math.hypot(dx, dy);
+            if (d > PW) {
+                fx = spineX + dx / d * PW;
+                fy = cy + dy / d * PW;
+            }
+            // Circle 2: distance from opposite spine corner <= diagonal
+            const diag = Math.hypot(PW, PH);
+            dx = fx - spineX; dy = fy - oy;
+            d = Math.hypot(dx, dy);
+            if (d > diag) {
+                fx = spineX + dx / d * diag;
+                fy = oy + dy / d * diag;
+            }
+            // Keep slightly inside the page boundary so fold line stays well-defined
+            const cx = dir > 0 ? 2 * PW : 0;
+            if (Math.hypot(fx - cx, fy - cy) < 1.5) {
+                fx = cx + (dir > 0 ? -1.5 : 1.5);
+            }
+            return [fx, fy];
+        }
+
+        // Clip a convex polygon against half-plane (p - M) · N <= 0
+        function clipHalfPlane(poly, mx, my, nx, ny) {
+            const out = [];
+            for (let i = 0; i < poly.length; i++) {
+                const a = poly[i], b = poly[(i + 1) % poly.length];
+                const da = (a[0] - mx) * nx + (a[1] - my) * ny;
+                const db = (b[0] - mx) * nx + (b[1] - my) * ny;
+                if (da <= 0) out.push(a);
+                if ((da <= 0) !== (db <= 0)) {
+                    const t = da / (da - db);
+                    out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+                }
+            }
+            return out;
+        }
+
+        function tracePoly(poly) {
+            ctx.beginPath();
+            for (let i = 0; i < poly.length; i++) {
+                if (i === 0) ctx.moveTo(poly[i][0], poly[i][1]);
+                else ctx.lineTo(poly[i][0], poly[i][1]);
+            }
+            ctx.closePath();
+        }
+
+        function renderFold(ox, oy, f, boil) {
+            const dir = f.dir; // +1 = turning right->left (next), -1 = turning left->right (prev)
+            const [fx, fy] = clampCorner(f.fx, f.fy, dir, f.topCorner);
+            const cx = dir > 0 ? 2 * PW : 0;
+            const cy = f.topCorner ? 0 : PH;
+
+            // Midpoint M and unit normal N pointing from F toward original corner C
+            const mx = (fx + cx) * 0.5, my = (fy + cy) * 0.5;
+            const vx = cx - fx, vy = cy - fy;
+            const dist = Math.hypot(vx, vy) || 1;
+            const nx = vx / dist, ny = vy / dist;
+
+            // Turning page rect in book-local coordinates (0..2*PW, 0..PH)
+            const rx0 = dir > 0 ? PW : 0;
+            const rx1 = dir > 0 ? 2 * PW : PW;
+            const pageRect = [[rx0, 0], [rx1, 0], [rx1, PH], [rx0, PH]];
+
+            // Split the turning page along fold line L into:
+            //   keptPoly   = still lying flat on its original side (N · (p - M) <= 0)
+            //   liftedPoly = peeled up and folded over across L (N · (p - M) >= 0)
+            const keptPoly = clipHalfPlane(pageRect, mx, my, nx, ny);
+            const liftedPoly = clipHalfPlane(pageRect, mx, my, -nx, -ny);
+
+            // Reflected polygon = where the folded back of the page lands!
+            const reflectPt = ([px, py]) => {
+                const dot = (px - mx) * nx + (py - my) * ny;
+                return [px - 2 * dot * nx, py - 2 * dot * ny];
+            };
+            const foldedPoly = liftedPoly.map(reflectPt);
+
+            // Which sides are involved?
+            // Current spread: left = 2*state - 1, right = 2*state
+            const curLeft = 2 * state - 1;
+            const curRight = 2 * state;
+            const nextState = state + dir;
+            const turningFront = dir > 0 ? curRight : curLeft;
+            const turningBack = dir > 0 ? 2 * nextState - 1 : 2 * nextState;
+            const underneath = dir > 0 ? 2 * nextState : 2 * nextState - 1;
+            const staticSide = dir > 0 ? curLeft : curRight;
+            const staticX = dir > 0 ? 0 : PW;
+
+            const liftAmt = Math.sin(Math.min(1, dist / (2 * PW)) * Math.PI);
+
+            ctx.save();
+            ctx.translate(ox, oy);
+
+            // 1. Static opposite page (e.g. left page when turning right->left)
+            if (staticSide >= 0 && staticSide <= 15) {
+                drawSide(staticSide, staticX, 0, boil);
+            }
+
+            // 2. Underneath revealed page (clipped to liftedPoly) + cast shadow from the folded paper
+            if (liftedPoly.length >= 3) {
+                ctx.save();
+                tracePoly(liftedPoly);
+                ctx.clip();
+                if (underneath >= 0 && underneath <= 15) {
+                    drawSide(underneath, rx0, 0, boil);
+                    // Cast shadow falling from fold line onto the revealed page underneath
+                    const shLen = 28 + liftAmt * 42;
+                    const sg = ctx.createLinearGradient(mx, my, mx + nx * shLen, my + ny * shLen);
+                    sg.addColorStop(0, `rgba(46, 70, 130, ${(0.34 * Math.max(0.25, liftAmt)).toFixed(3)})`);
+                    sg.addColorStop(0.55, `rgba(46, 70, 130, ${(0.1 * Math.max(0.2, liftAmt)).toFixed(3)})`);
+                    sg.addColorStop(1, 'rgba(46, 70, 130, 0)');
+                    ctx.fillStyle = sg;
+                    ctx.fillRect(0, 0, 2 * PW, PH);
+                }
+                ctx.restore();
+            }
+
+            // 3. Unfolded flat part of the turning page (clipped to keptPoly)
+            if (keptPoly.length >= 3) {
+                ctx.save();
+                tracePoly(keptPoly);
+                ctx.clip();
+                drawSide(turningFront, rx0, 0, boil);
+                // Soft shadow approaching the fold crease
+                const crLen = 14 + liftAmt * 18;
+                const cg = ctx.createLinearGradient(mx, my, mx - nx * crLen, my - ny * crLen);
+                cg.addColorStop(0, `rgba(46, 70, 130, ${(0.14 * liftAmt).toFixed(3)})`);
+                cg.addColorStop(1, 'rgba(46, 70, 130, 0)');
+                ctx.fillStyle = cg;
+                ctx.fillRect(0, 0, 2 * PW, PH);
+                ctx.restore();
+            }
+
+            // 4. Folded-over back of the turning page (reflected across fold line L!)
+            if (foldedPoly.length >= 3) {
+                // Soft drop shadow cast by the curled leaf onto the left/static page
+                ctx.save();
+                ctx.shadowColor = `rgba(46, 70, 130, ${(0.24 * Math.max(0.25, liftAmt)).toFixed(3)})`;
+                ctx.shadowBlur = 14 + liftAmt * 12;
+                ctx.shadowOffsetX = -nx * 5;
+                ctx.shadowOffsetY = 4;
+                tracePoly(foldedPoly);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                tracePoly(foldedPoly);
+                ctx.clip();
+
+                // Reflection matrix across line through M with unit normal (nx, ny):
+                // R(p) = M + (I - 2 N N^T)(p - M)
+                const a = 1 - 2 * nx * nx;
+                const b = -2 * nx * ny;
+                const d = 1 - 2 * ny * ny;
+                const e = mx - (a * mx + b * my);
+                const fv = my - (b * mx + d * my);
+
+                ctx.save();
+                ctx.transform(a, b, b, d, e, fv);
+                // Pre-mirror horizontally inside the page rect so reflection un-mirrors it right-side-up!
+                ctx.translate(rx0 + PW, 0);
+                ctx.scale(-1, 1);
+                drawSide(turningBack, 0, 0, boil);
+                ctx.restore();
+
+                // Cylindrical paper-curl shading across the bend!
+                const curlW = Math.min(PW * 0.55, 22 + dist * 0.24);
+                const bg = ctx.createLinearGradient(mx, my, mx - nx * curlW, my - ny * curlW);
+                bg.addColorStop(0, `rgba(46, 70, 130, ${(0.26 * Math.max(0.3, liftAmt)).toFixed(3)})`);
+                bg.addColorStop(0.18, 'rgba(255, 255, 255, 0.32)');
+                bg.addColorStop(0.45, 'rgba(255, 255, 255, 0.06)');
+                bg.addColorStop(1, 'rgba(46, 70, 130, 0.04)');
+                ctx.fillStyle = bg;
+                ctx.fillRect(-PW, -PH, 4 * PW, 3 * PH);
+
+                // Subtle paper edge stroke along the folded sheet
+                tracePoly(foldedPoly);
+                ctx.strokeStyle = 'rgba(46, 70, 130, 0.42)';
+                ctx.lineWidth = 1.1;
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
+
+        function drawBookBackdrop(ox, oy) {
+            const isFront = state === 0 && (!fold || fold.hover);
+            const isBack = state === MAX_STATE && (!fold || fold.hover);
+
+            // Soft desk shadow under active book footprint
+            ctx.save();
+            ctx.fillStyle = 'rgba(46, 70, 130, 0.13)';
+            ctx.filter = 'blur(10px)';
+            if (isFront) ctx.fillRect(ox + PW + 6, oy + 8, PW, PH);
+            else if (isBack) ctx.fillRect(ox + 6, oy + 8, PW, PH);
+            else ctx.fillRect(ox + 6, oy + 8, PW * 2, PH);
+            ctx.restore();
+
+            // Stacked paper edge layers peeking out when open
+            if (!isFront && !isBack) {
+                for (let k = 3; k >= 1; k--) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = 'rgba(46, 70, 130, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.fillRect(ox - k * 2, oy + k * 1.5, PW * 2 + k * 4, PH);
+                    ctx.strokeRect(ox - k * 2, oy + k * 1.5, PW * 2 + k * 4, PH);
+                }
+            }
+        }
+
+        /* ---------- Smooth Fold Animation & Controls ---------- */
+
+        let dragging = null;
+
+        function startAutoFold(dir, topCorner = false) {
+            const next = state + dir;
+            if (next < 0 || next > MAX_STATE) return;
+            loupe.classList.add('hidden');
+            const startX = dir > 0 ? 2 * PW - 2 : 2;
+            const startY = topCorner ? 2 : PH - 2;
+            const endX = dir > 0 ? 0 : 2 * PW;
+            const endY = topCorner ? 0 : PH;
+
+            const fromX = fold && !fold.hover && fold.dir === dir ? fold.fx : startX;
+            const fromY = fold && !fold.hover && fold.dir === dir ? fold.fy : startY;
+
+            fold = {
+                dir,
+                topCorner,
+                fx: fromX,
+                fy: fromY,
+                anim: {
+                    t0: performance.now(),
+                    dur: 620,
+                    fromX, fromY,
+                    toX: endX, toY: endY,
+                    commit: true,
+                    arc: (topCorner ? 1 : -1) * PH * 0.2,
+                    startShift: bookShift,
+                    endShift: targetShiftFor(next),
+                },
+            };
+        }
+
+        function releaseFold(commit) {
+            if (!fold) return;
+            const dir = fold.dir;
+            const next = commit ? state + dir : state;
+            const toX = commit ? (dir > 0 ? 0 : 2 * PW) : (dir > 0 ? 2 * PW : 0);
+            const toY = fold.topCorner ? 0 : PH;
+            fold.anim = {
+                t0: performance.now(),
+                dur: 420,
+                fromX: fold.fx,
+                fromY: fold.fy,
+                toX, toY,
+                commit,
+                arc: (fold.topCorner ? 1 : -1) * PH * 0.08,
+                startShift: bookShift,
+                endShift: targetShiftFor(next),
+            };
+        }
+
+        function updateUI() {
+            const isFront = state === 0;
+            const isBack = state === MAX_STATE;
+            $('btn-prev').disabled = isFront;
+            $('btn-next').disabled = isBack;
+            if (isFront) $('spread-count').textContent = 'front';
+            else if (isBack) $('spread-count').textContent = 'back';
+            else {
+                const L = (state - 1) * 2 + 1;
+                const R = L + 1;
+                $('spread-count').textContent = R <= imgs.length ? `${L}–${R} / ${imgs.length}` : `${L} / ${imgs.length}`;
+            }
+            const showLoupe = loupeOn && !isFront && !isBack && (!fold || fold.hover);
+            loupe.classList.toggle('hidden', !showLoupe);
+            if (showLoupe) updateLoupe();
+        }
+
+        function bookOrigin() {
+            return [BX + bookShift * PW, BY];
+        }
+
+        /* ---------- Pointer Interaction (Corner Grab, Peel & Fold) ---------- */
+
+        canvas.addEventListener('pointerdown', e => {
+            if (fold && fold.anim) return;
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left, py = e.clientY - rect.top;
+            const [ox, oy] = bookOrigin();
+            const lx = px - ox, ly = py - oy;
+
+            let dir;
+            if (state === 0) {
+                if (lx < PW || lx > 2 * PW || ly < 0 || ly > PH) return;
+                dir = 1;
+            } else if (state === MAX_STATE) {
+                if (lx < 0 || lx > PW || ly < 0 || ly > PH) return;
+                dir = -1;
+            } else {
+                if (lx < 0 || lx > 2 * PW || ly < 0 || ly > PH) return;
+                dir = lx >= PW ? 1 : -1;
+            }
+
+            if (state + dir < 0 || state + dir > MAX_STATE) return;
+            const topCorner = ly < PH * 0.42;
+            dragging = {
+                id: e.pointerId,
+                startX: lx, startY: ly,
+                dir, topCorner,
+                moved: false,
+                startShift: bookShift,
+                endShift: targetShiftFor(state + dir),
+            };
+            canvas.setPointerCapture(e.pointerId);
+        });
+
+        canvas.addEventListener('pointermove', e => {
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left, py = e.clientY - rect.top;
+            const [ox, oy] = bookOrigin();
+            const lx = px - ox, ly = py - oy;
+
+            if (dragging) {
+                if (!dragging.moved && Math.hypot(lx - dragging.startX, ly - dragging.startY) > 6) {
+                    dragging.moved = true;
+                    loupe.classList.add('hidden');
+                }
+                if (!dragging.moved) return;
+
+                const dir = dragging.dir;
+                const progress = dir > 0
+                    ? Math.max(0, Math.min(1, (2 * PW - lx) / (2 * PW)))
+                    : Math.max(0, Math.min(1, lx / (2 * PW)));
+                bookShift = dragging.startShift + (dragging.endShift - dragging.startShift) * progress;
+                const [ox2, oy2] = bookOrigin();
+                fold = { dir, topCorner: dragging.topCorner, fx: px - ox2, fy: py - oy2 };
+                return;
+            }
+
+            // Gentle inviting corner-peel on hover near bottom/top outer corners!
+            if (fold && fold.anim) return;
+            const cornerR = 95;
+            if (state < MAX_STATE && lx >= PW && lx <= 2 * PW && ly >= 0 && ly <= PH) {
+                const dBot = Math.hypot(lx - 2 * PW, ly - PH);
+                const dTop = Math.hypot(lx - 2 * PW, ly);
+                if (dBot < cornerR) {
+                    const k = 1 - dBot / cornerR;
+                    fold = { dir: 1, topCorner: false, fx: 2 * PW - 18 - k * 34, fy: PH - 12 - k * 24, hover: true };
+                    return;
+                }
+                if (dTop < cornerR) {
+                    const k = 1 - dTop / cornerR;
+                    fold = { dir: 1, topCorner: true, fx: 2 * PW - 18 - k * 34, fy: 12 + k * 24, hover: true };
+                    return;
+                }
+            }
+            if (state > 0 && lx >= 0 && lx <= PW && ly >= 0 && ly <= PH) {
+                const dBot = Math.hypot(lx, ly - PH);
+                const dTop = Math.hypot(lx, ly);
+                if (dBot < cornerR) {
+                    const k = 1 - dBot / cornerR;
+                    fold = { dir: -1, topCorner: false, fx: 18 + k * 34, fy: PH - 12 - k * 24, hover: true };
+                    return;
+                }
+                if (dTop < cornerR) {
+                    const k = 1 - dTop / cornerR;
+                    fold = { dir: -1, topCorner: true, fx: 18 + k * 34, fy: 12 + k * 24, hover: true };
+                    return;
+                }
+            }
+            if (fold && fold.hover) fold = null;
+        });
+
+        function endPointer() {
+            if (!dragging) return;
+            const d = dragging;
+            dragging = null;
+            if (!d.moved) {
+                startAutoFold(d.dir, d.topCorner);
+                return;
+            }
+            const commit = d.dir > 0 ? fold.fx < PW * 1.15 : fold.fx > PW * 0.85;
+            releaseFold(commit);
+        }
+        canvas.addEventListener('pointerup', endPointer);
+        canvas.addEventListener('pointercancel', endPointer);
+        canvas.addEventListener('pointerleave', () => {
+            if (fold && fold.hover) fold = null;
+        });
+
+        $('btn-prev').addEventListener('click', () => { if (!fold || fold.hover) startAutoFold(-1, false); });
+        $('btn-next').addEventListener('click', () => { if (!fold || fold.hover) startAutoFold(1, false); });
+        $('btn-loupe').addEventListener('click', () => {
+            loupeOn = !loupeOn;
+            $('btn-loupe').classList.toggle('on', loupeOn);
+            $('btn-loupe').setAttribute('aria-pressed', String(loupeOn));
+            updateUI();
+        });
+
+        addEventListener('keydown', e => {
+            if (fold && !fold.hover) return;
+            if (e.key === 'ArrowRight') startAutoFold(1, false);
+            else if (e.key === 'ArrowLeft') startAutoFold(-1, false);
+        });
+
+        /* ---------- Draggable Magnifying Glass ---------- */
+
+        let loupePos = { x: 0, y: 0 };
+        let loupeDrag = null;
+        const MAG = 2.4;
+
+        function parkLoupe() {
+            const lw = loupe.offsetWidth || 122;
+            loupePos.x = Math.max(8, BX + 2 * PW - lw - 18);
+            loupePos.y = Math.max(8, BY + PH - lw - 18);
+            applyLoupe();
+        }
+
+        function applyLoupe() {
+            loupe.style.left = loupePos.x + 'px';
+            loupe.style.top = loupePos.y + 'px';
+            updateLoupe();
+        }
+
+        function updateLoupe() {
+            if (!loupeOn || state === 0 || state === MAX_STATE) return;
+            const lw = loupe.offsetWidth || 122;
+            const cx = loupePos.x + lw / 2;
+            const cy = loupePos.y + lw / 2;
+            const [ox, oy] = bookOrigin();
+
+            const sides = [
+                { side: 2 * state - 1, rx: ox },
+                { side: 2 * state, rx: ox + PW },
+            ];
+            for (const { side, rx } of sides) {
+                const idx = side - 1;
+                if (idx < 0 || idx >= imgs.length) continue;
+                const im = imgs[idx];
+                if (!im.complete || !im.naturalWidth) continue;
+                const pad = Math.min(PW, PH) * 0.055;
+                const aw = PW - pad * 2, ah = PH - pad * 2;
+                const s = Math.min(aw / im.naturalWidth, ah / im.naturalHeight);
+                const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+                const ix = rx + (PW - dw) / 2, iy = oy + (PH - dh) / 2;
+
+                if (cx >= ix - 22 && cx <= ix + dw + 22 && cy >= iy - 22 && cy <= iy + dh + 22) {
+                    const relX = (cx - ix) / dw;
+                    const relY = (cy - iy) / dh;
+                    const bgW = dw * MAG, bgH = dh * MAG;
+                    const lensW = loupeLens.offsetWidth || (lw - 12);
+                    loupeLens.style.backgroundImage = `url("${im.src}")`;
+                    loupeLens.style.backgroundSize = `${bgW}px ${bgH}px`;
+                    loupeLens.style.backgroundPosition = `${lensW / 2 - relX * bgW}px ${lensW / 2 - relY * bgH}px`;
+                    return;
+                }
+            }
+            loupeLens.style.backgroundImage = 'none';
+        }
+
+        let lastLoupeBoil = -1;
+        function drawRisoLoupe(boil) {
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            const w = loupeCanvas.clientWidth || 196;
+            const h = loupeCanvas.clientHeight || 196;
+            if (loupeCanvas.width !== Math.round(w * dpr) || loupeCanvas.height !== Math.round(h * dpr)) {
+                loupeCanvas.width = Math.round(w * dpr);
+                loupeCanvas.height = Math.round(h * dpr);
+            }
+            const c = loupeCanvas.getContext('2d');
+            c.setTransform(dpr, 0, 0, dpr, 0, 0);
+            c.clearRect(0, 0, w, h);
+
+            const P = makePen(c, hash('loupe' + boil));
+            const lw = loupe.offsetWidth || 124;
+            const off = Math.abs(parseFloat(getComputedStyle(loupeCanvas).left)) || 18;
+            const cx = off + lw * 0.5, cy = off + lw * 0.5;
+            const rOut = lw * 0.49, rIn = lw * 0.43;
+
+            const ringPts = (r, ox = 0, oy = 0, n = 28) => {
+                const pts = [];
+                for (let k = 0; k < n; k++) {
+                    const a = k / n * TAU;
+                    pts.push([cx + ox + Math.cos(a) * r, cy + oy + Math.sin(a) * r]);
+                }
+                return pts;
+            };
+
+            // Handle geometry (45° down-right)
+            const ang = Math.PI * 0.25;
+            const ux = Math.cos(ang), uy = Math.sin(ang);
+            const px = -uy, py = ux;
+            const h0 = rOut - 1, h1 = rOut + lw * 0.14, h2 = rOut + lw * 0.46;
+            const wCol = lw * 0.055, wTip = lw * 0.07;
+
+            const quad = (a, b, wa, wb, ox = 0, oy = 0) => [
+                [cx + ox + ux * a + px * wa, cy + oy + uy * a + py * wa],
+                [cx + ox + ux * b + px * wb, cy + oy + uy * b + py * wb],
+                [cx + ox + ux * b - px * wb, cy + oy + uy * b - py * wb],
+                [cx + ox + ux * a - px * wa, cy + oy + uy * a - py * wa],
+            ];
+
+            // Halftone drop shadow under rim & handle
+            P.fill(quad(h0, h2, wCol, wTip, 4, 5), 'blue', 0.2);
+
+            // Brass ferrule collar
+            const collar = quad(h0, h1, wCol, wCol * 1.05);
+            c.fillStyle = '#fff';
+            c.beginPath(); collar.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.fill();
+            P.fill(collar, 'sun', 0.78);
+            P.line(collar, 1.6, 'blue', true, 0.4);
+
+            // Wooden handle (coral + sun riso wood)
+            const handle = quad(h1, h2, wCol * 1.05, wTip);
+            c.fillStyle = '#fff';
+            c.beginPath(); handle.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.fill();
+            P.fill(handle, 'coral', 0.65);
+            P.fill(handle, 'sun', 0.4);
+            P.line(handle, 1.8, 'blue', true, 0.5);
+
+            // Riso brass rim ring (knockout white ring + sun halftone + wobbly blue ink outlines)
+            const outer = ringPts(rOut), inner = ringPts(rIn);
+            c.save();
+            c.fillStyle = '#fff';
+            c.beginPath();
+            outer.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
+            inner.slice().reverse().forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
+            c.fill('evenodd');
+            c.clip('evenodd');
+            P.fill(outer, 'sun', 0.82);
+            P.fill(outer, 'coral', 0.16);
+            c.restore();
+
+            P.line(outer, 2.0, 'blue', true, 0.55);
+            P.line(inner, 1.4, 'blue', true, 0.45);
+
+            // Subtle hand-drawn glass reflection glint inside upper-left of lens
+            const glint = [];
+            for (let k = 0; k <= 8; k++) {
+                const a = Math.PI * 1.08 + (k / 8) * Math.PI * 0.34;
+                glint.push([cx + Math.cos(a) * (rIn - 7), cy + Math.sin(a) * (rIn - 7)]);
+            }
+            c.save();
+            c.strokeStyle = 'rgba(255, 255, 255, 0.82)';
+            c.lineWidth = 3;
+            c.lineCap = 'round';
+            c.beginPath();
+            glint.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
+            c.stroke();
+            c.restore();
+            P.line(glint, 0.85, 'teal', false, 0.35);
+        }
+
+        loupe.addEventListener('pointerdown', e => {
+            e.stopPropagation();
+            loupeDrag = { dx: e.clientX - loupePos.x, dy: e.clientY - loupePos.y };
+            loupe.setPointerCapture(e.pointerId);
+        });
+        loupe.addEventListener('pointermove', e => {
+            if (!loupeDrag) return;
+            const lw = loupe.offsetWidth;
+            loupePos.x = Math.max(-16, Math.min(CW - lw + 16, e.clientX - loupeDrag.dx));
+            loupePos.y = Math.max(-16, Math.min(CH - lw + 16, e.clientY - loupeDrag.dy));
+            applyLoupe();
+        });
+        const stopLoupe = () => { loupeDrag = null; };
+        loupe.addEventListener('pointerup', stopLoupe);
+        loupe.addEventListener('pointercancel', stopLoupe);
+        loupe.addEventListener('dblclick', parkLoupe);
+
+        /* ---------- Render Loop ---------- */
+
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+        function tick(now) {
+            requestAnimationFrame(tick);
+
+            // Step active fold animation
+            if (fold && fold.anim) {
+                const a = fold.anim;
+                const k = Math.min(1, (now - a.t0) / a.dur);
+                const e = easeOutCubic(k);
+                fold.fx = a.fromX + (a.toX - a.fromX) * e;
+                fold.fy = a.fromY + (a.toY - a.fromY) * e + Math.sin(k * Math.PI) * a.arc;
+                bookShift = a.startShift + (a.endShift - a.startShift) * e;
+                if (k >= 1) {
+                    if (a.commit) state = Math.max(0, Math.min(MAX_STATE, state + fold.dir));
+                    bookShift = targetShiftFor(state);
+                    fold = null;
+                    updateUI();
+                }
+            }
+
+            const boil = reducedMotion ? 0 : Math.floor((now / 1000) * 4) % 3;
+            if (boil !== lastLoupeBoil && !loupe.classList.contains('hidden')) {
+                lastLoupeBoil = boil;
+                drawRisoLoupe(boil);
+            }
+            const night = document.documentElement.classList.contains('night');
+
+            ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+            ctx.fillStyle = night ? '#1e2340' : '#ffffff';
+            ctx.fillRect(0, 0, CW, CH);
+
+            const [ox, oy] = bookOrigin();
+            drawBookBackdrop(ox, oy);
+
+            if (fold) {
+                renderFold(ox, oy, fold, boil);
+            } else {
+                const leftSide = 2 * state - 1;
+                const rightSide = 2 * state;
+                if (leftSide >= 0 && leftSide <= 15) drawSide(leftSide, ox, oy, boil);
+                if (rightSide >= 0 && rightSide <= 15) drawSide(rightSide, ox + PW, oy, boil);
+            }
+        }
+
+        new ResizeObserver(() => { layout(); parkLoupe(); }).observe(stageWrap);
+        layout();
+        bookShift = targetShiftFor(0);
+        updateUI();
+        parkLoupe();
+        requestAnimationFrame(tick);
+    </script>
+</body>
+
+</html>

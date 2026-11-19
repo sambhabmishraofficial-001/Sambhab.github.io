@@ -991,7 +991,13 @@ return pts;
         return cv;
     }
 
-    let budget = 0;
+    let budget = 0, frameDeadline = 0;
+    function fallbackLayer(room, layer, scale) {
+        const exact = cache.get(room.id + '|' + layer + '|0|' + scale);
+        if (exact) return exact;
+        for (const [k, v] of cache) if (k.startsWith(room.id + '|' + layer + '|')) return v;
+        return null;
+    }
     function layerFor(room, layer, variant, scale) {
         const key = room.id + '|' + layer + '|' + variant + '|' + scale;
         let cv = cache.get(key);
@@ -1000,15 +1006,18 @@ return pts;
             cache.set(key, cv);
             return cv;
         }
-        if (budget > 0) {
+        const existing = fallbackLayer(room, layer, scale);
+        // Never stall a frame for extra boil variants; only build them while time remains.
+        if (budget > 0 && (!existing || performance.now() < frameDeadline)) {
             budget--;
-            cv = renderLayer(room, layer, variant, scale);
-            cache.set(key, cv);
+            const v = existing ? variant : 0;
+            const k = room.id + '|' + layer + '|' + v + '|' + scale;
+            cv = renderLayer(room, layer, v, scale);
+            cache.set(k, cv);
             while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
             return cv;
         }
-        for (const [k, v] of cache) if (k.startsWith(room.id + '|' + layer + '|')) return v;
-        return null;
+        return existing;
     }
 
     // ---------- Camera ----------
@@ -1076,7 +1085,8 @@ return pts;
         const scale = BUCKETS.find(b => b >= need) || BUCKETS[BUCKETS.length - 1];
         const boil = Math.floor(t * 4) % 3;
         const variant = tween ? 0 : boil;
-        budget = 2;
+        budget = 1;
+        frameDeadline = performance.now() + 7;
 
         const vx0 = cam.x - vw / 2 / cam.zoom, vx1 = cam.x + vw / 2 / cam.zoom;
         const vy0 = cam.y - vh / 2 / cam.zoom, vy1 = cam.y + vh / 2 / cam.zoom;
@@ -1174,13 +1184,8 @@ return pts;
         canvas.width = Math.round(vw * dpr);
         canvas.height = Math.round(vh * dpr);
     }
-    window.addEventListener('resize', resize);
-    resize();
-    Object.assign(cam, overview());
-    tour.next = performance.now() + 2500;
-
     // Parked view: the library fills the bottom-left corner, the lab peeking in above it.
-    let parked = false;
+    let parked = true;
     function cornerView() {
         const lib = ROOMS.find(r => r.id === 'library').box;
         const zoom = (vh * 0.82) / (lib.x1 - lib.x0);
@@ -1190,6 +1195,11 @@ return pts;
             zoom,
         };
     }
+
+    window.addEventListener('resize', resize);
+    resize();
+    Object.assign(cam, cornerView());
+    tour.pausedUntil = Infinity;
     window.addEventListener('resize', () => { if (parked && !tween) Object.assign(cam, cornerView()); });
 
     window.paperRooms = {

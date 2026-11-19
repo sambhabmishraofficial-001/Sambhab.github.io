@@ -71,7 +71,7 @@ window.PixelPlays = (function () {
     if (!inFrame) {
       const back = document.createElement('a');
       back.href = '../../fun.html';
-      back.textContent = '← fun';
+      back.textContent = '← back';
       bar.appendChild(back);
     }
 

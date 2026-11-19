@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Stari Most</title>
+<style>
+  :root { --ink: #23272a; --muted: #6b7b8e; --paper: #fff; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--paper); color: var(--ink); }
+  body { font: 13px/1.35 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: pointer; outline: none; }
+  .hud { position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); display: flex; justify-content: space-between; gap: 16px; pointer-events: none; }
+  #scores { position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); display: grid; gap: 2px; pointer-events: none; }
+  #scores b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: #2e4682; }
+  .dots { display: flex; gap: 4px; margin-top: 2px; }
+  .dots i { width: 6px; height: 6px; background: #ec6450; border-radius: 1px; }
+  .dots i.off { opacity: 0.18; }
+  #bottom { bottom: max(14px, env(safe-area-inset-bottom)); align-items: flex-end; }
+  #status { color: var(--muted); }
+  #mute { pointer-events: auto; white-space: nowrap; font: inherit; color: var(--muted); background: none; border: 0; padding: 10px; margin: -10px; cursor: pointer; }
+  #mute:hover, #mute:focus-visible { color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" tabindex="0" aria-label="Stari Most stone bridge over the emerald river. Hold to crouch, release to jump, hold in air to tuck and flip."></canvas></div>
+<div id="scores">
+  <b id="total">0.0</b>
+  <div class="dots" id="dives"></div>
+</div>
+<div class="hud" id="bottom">
+  <div id="status" role="status" aria-live="polite"></div>
+  <button id="mute" type="button" aria-pressed="false">sound on</button>
+</div>
+<script src="../shell.js"></script>
+<script>
+PixelPlays.mount({
+  id: 'stari-most',
+  rules: [
+    'Five dives off the old bridge. Enter the water vertically, feet or head first.',
+    'Hold to crouch, release to jump. A longer crouch jumps higher and spins faster.',
+    'In the air, hold to tuck and flip. Release to open up and slow the spin.',
+    'A straighter entry scores more, and every flip multiplies it. Land flat and you score nothing. Wind nudges your spin.',
+  ],
+});
+</script>
+<script src="../riso.js"></script>
+<script>
+'use strict';
+
+const { PAL, TAU, clamp, lerp, hash, rand, ellipse, circle, createPatternCache, createPen, applyNight } = RisoKit;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+const patCache = createPatternCache(ctx);
+
+// Isometric projection (bridge spans along x, river flows along y, height z)
+const TW = 26, TH = 13, TZ = 20;
+const iso = (x, y, z = 0) => [(x - y) * TW / 2, (x + y) * TH / 2 - z * TZ];
+const flat = (x0, y0, z, x1, y1) => [iso(x0, y0, z), iso(x1, y0, z), iso(x1, y1, z), iso(x0, y1, z)];
+const faceL = (x0, y0, z, x1, y1, h) => [iso(x0, y1, z), iso(x1, y1, z), iso(x1, y1, z + h), iso(x0, y1, z + h)];
+const faceR = (x0, y0, z, x1, y1, h) => [iso(x1, y0, z), iso(x1, y1, z), iso(x1, y1, z + h), iso(x1, y0, z + h)];
+
+function block(P, x0, y0, z0, x1, y1, z1, fills, o = {}) {
+  const h = z1 - z0, s = o.shade ?? 1;
+  const L = faceL(x0, y0, z0, x1, y1, h), Rf = faceR(x0, y0, z0, x1, y1, h), T = flat(x0, y0, z1, x1, y1);
+  P.paint(L, fills, 0.85, 0.1 * s);
+  P.paint(Rf, fills, 1, 0.25 * s);
+  P.paint(T, o.top || fills, 0.6, 0);
+  const lw = o.lw ?? 0.9;
+  P.line(L, lw, 'blue', true, 0.3);
+  P.line(Rf, lw, 'blue', true, 0.3);
+  P.line(T, lw, 'blue', true, 0.3);
+}
+
+// Bridge geometry (from Pixel Plays Stari Most, MIT)
+const ARCH_A = 7.2, ARCH_C = 1.2, ARCH_R = ARCH_A + ARCH_C, ARCH_BASE = 2.0;
+const DECK_END = 8.4, DECK_LOW = 6.9, DECK_TOP = 11.2, HALF_W = 1.15;
+const JUMP_Y = 1.1, PARAPET = 0.45, GRAVITY = 8.5, DIVES = 5;
+const HIP_HEIGHT = 1.05;
+const archZ = x => ARCH_BASE + Math.sqrt(Math.max(0, ARCH_R * ARCH_R - (Math.abs(x) + ARCH_C) ** 2));
+const deckZ = x => { const a = Math.abs(x); return a >= DECK_END ? DECK_LOW : DECK_TOP - (DECK_TOP - DECK_LOW) * Math.pow(a / DECK_END, 1.6); };
+
+/* ---------- Game state ---------- */
+const G = {
+  phase: 'ready', dive: 0, total: 0, scores: [], best: readBest(), wind: 0, power: 0,
+  x: 0, y: JUMP_Y, z: 0, vy: 0, vz: 0, pitch: 0, spin: 0, baseSpin: 0, holding: false, tuck: 0,
+  timer: 0, time: 0, status: '', cheer: 0,
+};
+const splash = { drops: [], rings: [] };
+const tourists = [];
+const SHIRTS = [PAL.RED, [['sun', 0.85]], [['teal', 0.72]], PAL.PURPLE, PAL.ORANGE, [['blue', 0.6]]];
+for (let k = 0; k < 10; k++) {
+  const side = k < 5 ? -1 : 1;
+  const x = side * (2.6 + (k % 5) * 1.3);
+  tourists.push({ x, y: (k % 2 ? -0.45 : 0.45), shirt: SHIRTS[k % SHIRTS.length], phase: k * 1.1 });
+}
+
+const nodes = { total: document.getElementById('total'), dives: document.getElementById('dives'), status: document.getElementById('status') };
+function readBest() { try { return +localStorage.getItem('pixel-plays:stari-most:best') || 0; } catch { return 0; } }
+function saveBest(v) { try { localStorage.setItem('pixel-plays:stari-most:best', v); } catch {} }
+function setStatus(text) { if (text !== G.status) { G.status = text; nodes.status.textContent = text; } }
+function renderHud() {
+  nodes.total.textContent = G.total.toFixed(1);
+  if (nodes.dives.children.length !== DIVES) nodes.dives.innerHTML = '<i></i>'.repeat(DIVES);
+  [...nodes.dives.children].forEach((el, k) => el.classList.toggle('off', k < G.dive));
+}
+function windWords() {
+  const w = Math.abs(G.wind);
+  if (w < 0.08) return 'no wind';
+  return (w > 0.2 ? 'strong ' : 'light ') + (G.wind > 0 ? 'wind at your back' : 'headwind');
+}
+function ready() {
+  G.phase = 'ready';
+  G.power = 0; G.pitch = 0; G.spin = 0; G.tuck = 0; G.holding = false;
+  G.x = 0; G.y = JUMP_Y; G.z = deckZ(0) + PARAPET + HIP_HEIGHT;
+  G.wind = (Math.random() - 0.5) * 0.6;
+  splash.drops.length = 0;
+  setStatus(windWords() + ' · hold, then release to jump');
+  renderHud();
+}
+function jump() {
+  const p = G.power;
+  G.vy = 1.4 + 1.2 * p;
+  G.vz = 2.0 + 3.2 * p;
+  G.baseSpin = 0.25 + 0.85 * p + G.wind;
+  G.spin = G.baseSpin;
+  G.phase = 'air';
+  setStatus('hold to tuck, release to open');
+  sound('jump');
+}
+function entry() {
+  const half = G.pitch / Math.PI;
+  const err = Math.abs(half - Math.round(half)) * Math.PI;
+  const quality = clamp(1 - err / (Math.PI / 3), 0, 1);
+  const flips = Math.abs(Math.round(half)) / 2;
+  const points = Math.round(quality * 10 * (1 + flips * 0.6) * 10) / 10;
+  G.total = Math.round((G.total + points) * 10) / 10;
+  G.scores.push(points);
+  G.dive++;
+  G.phase = 'under';
+  G.timer = 0;
+  G.tuck = 0;
+  const word = quality >= 0.88 ? 'rip entry' : quality >= 0.55 ? 'clean' : quality > 0 ? 'rough' : 'belly flop';
+  const count = Math.round(10 + (1 - quality) * 42);
+  for (let k = 0; k < count; k++) {
+    const a = Math.random() * TAU, reach = Math.random() * (0.5 + (1 - quality) * 2.4), lift = 2 + Math.random() * (quality > 0.88 ? 7 : 4.5);
+    splash.drops.push({ x: G.x + Math.cos(a) * reach * 0.3, y: G.y + Math.sin(a) * reach * 0.3, z: 0.1, vx: Math.cos(a) * reach, vy: Math.sin(a) * reach, vz: lift });
+  }
+  splash.rings.push({ x: G.x, y: G.y, r: 0.4, life: 1 }, { x: G.x, y: G.y, r: 0, life: 1.3 });
+  sound('splash', 1 - quality * 0.75);
+  if (quality >= 0.55) { sound('cheer', quality); G.cheer = 1.8; }
+  setStatus(points.toFixed(1) + ' · ' + word + (flips ? ' · ' + flips + (flips === 1 ? ' flip' : ' flips') : ''));
+  renderHud();
+}
+function press() {
+  ensureAudio();
+  if (G.phase === 'over') { if (G.timer > 0.6) { G.dive = 0; G.total = 0; G.scores = []; ready(); } return; }
+  if (G.phase === 'ready') { G.phase = 'charge'; G.holding = true; G.power = 0; setStatus('release to jump'); return; }
+  if (G.phase === 'air') G.holding = true;
+}
+function release() {
+  if (G.phase === 'charge') { G.holding = false; jump(); return; }
+  G.holding = false;
+}
+function update(dt) {
+  G.time += dt;
+  G.timer += dt;
+  G.cheer = Math.max(0, G.cheer - dt);
+  if (G.phase === 'charge') {
+    G.power = Math.min(1, G.power + dt * 0.95);
+  } else if (G.phase === 'air') {
+    G.tuck = clamp(G.tuck + (G.holding ? 1 : -1) * dt * 6, 0, 1);
+    G.spin = lerp(G.baseSpin, G.baseSpin * 3.4 + 4.8, G.tuck);
+    G.pitch += G.spin * dt;
+    G.y += G.vy * dt;
+    G.z += G.vz * dt - 0.5 * GRAVITY * dt * dt;
+    G.vz -= GRAVITY * dt;
+    if (G.z <= 0.45) entry();
+  } else if (G.phase === 'under') {
+    if (G.timer > 1.7) {
+      if (G.dive >= DIVES) {
+        G.phase = 'over'; G.timer = 0;
+        const rec = G.total > G.best;
+        if (rec) { G.best = G.total; saveBest(G.best); }
+        setStatus('total ' + G.total.toFixed(1) + (rec ? ' · new best' : ' · best ' + G.best.toFixed(1)) + ' · tap to dive again');
+      } else ready();
+    }
+  }
+  for (const d of splash.drops) { d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt; d.vz -= GRAVITY * dt; }
+  if (splash.drops.length) splash.drops = splash.drops.filter(d => d.z > 0);
+  for (const r of splash.rings) { r.r += dt * 3.4; r.life -= dt * 0.85; }
+  if (splash.rings.length) splash.rings = splash.rings.filter(r => r.life > 0);
+}
+
+/* ---------- Risograph Bridge & Diver Drawing ---------- */
+
+function drawBase(P, R) {
+  // Cutaway river & rocky limestone banks
+  block(P, -14.5, -9, -0.6, 14.5, 9, 0, PAL.STONE_DK, { top: PAL.GREEN });
+  // Pebbled beaches & emerald Neretva river channel
+  P.shape(flat(-7.4, -9, 0.01, 7.4, 9), PAL.SAND, { lw: 0.6 });
+  P.shape(flat(-6.0, -9, 0.02, 6.0, 9), PAL.WATER, { lw: 0.8 });
+
+  // Stone watchtowers on both banks (Halebiya & Tara towers)
+  block(P, -12.6, -2.0, 0, -9.2, 2.0, 9.6, PAL.STONE);
+  P.shape([iso(-12.6, -2, 9.6), iso(-9.2, -2, 9.6), iso(-10.9, 0, 11.4)], PAL.WOOD_DK, { lw: 0.9 });
+  P.shape([iso(-9.2, -2, 9.6), iso(-9.2, 2, 9.6), iso(-10.9, 0, 11.4)], PAL.RED, { lw: 0.9 });
+  P.shape([iso(-12.6, 2, 9.6), iso(-9.2, 2, 9.6), iso(-10.9, 0, 11.4)], PAL.RED, { shade: 0.15, lw: 0.9 });
+
+  block(P, 9.2, -2.0, 0, 12.6, 2.0, 9.6, PAL.STONE);
+  P.shape([iso(9.2, -2, 9.6), iso(12.6, -2, 9.6), iso(10.9, 0, 11.4)], PAL.WOOD_DK, { lw: 0.9 });
+  P.shape([iso(12.6, -2, 9.6), iso(12.6, 2, 9.6), iso(10.9, 0, 11.4)], PAL.RED, { lw: 0.9 });
+  P.shape([iso(9.2, 2, 9.6), iso(12.6, 2, 9.6), iso(10.9, 0, 11.4)], PAL.RED, { shade: 0.15, lw: 0.9 });
+
+  // Small terracotta-roofed old-town houses along the banks
+  for (const [hx, hy, hh] of [[-13.4, 4.2, 3.6], [10.4, 4.5, 3.4], [-13.2, -6.4, 3.4], [10.6, -6.6, 3.5]]) {
+    block(P, hx, hy, 0, hx + 2.8, hy + 2.4, hh, PAL.STONE);
+    P.shape([iso(hx, hy + 2.4, hh), iso(hx + 2.8, hy + 2.4, hh), iso(hx + 1.4, hy + 1.2, hh + 1.2)], PAL.RED, { lw: 0.8 });
+    P.shape([iso(hx + 2.8, hy, hh), iso(hx + 2.8, hy + 2.4, hh), iso(hx + 1.4, hy + 1.2, hh + 1.2)], PAL.WOOD_DK, { lw: 0.8 });
+  }
+
+  // The iconic pointed-arch Stari Most stone bridge!
+  // 1. Bridge abutments on both banks
+  block(P, -9.2, -HALF_W, 0, -ARCH_A, HALF_W, DECK_LOW, PAL.STONE);
+  block(P, ARCH_A, -HALF_W, 0, 9.2, HALF_W, DECK_LOW, PAL.STONE);
+
+  // 2. Underside of the crescent arch (visible dark stone soffit)
+  const soffit = [];
+  for (let x = -ARCH_A; x <= ARCH_A; x += 0.6) soffit.push(iso(x, -HALF_W, archZ(x)));
+  for (let x = ARCH_A; x >= -ARCH_A; x -= 0.6) soffit.push(iso(x, HALF_W, archZ(x)));
+  P.shape(soffit, PAL.STONE_DK, { shade: 0.25, lw: 0.8 });
+
+  // 3. Front spandrel wall of the bridge (between arch curve and peaked deck!)
+  const frontWall = [];
+  for (let x = -DECK_END; x <= DECK_END; x += 0.6) frontWall.push(iso(x, HALF_W, deckZ(x)));
+  for (let x = ARCH_A; x >= -ARCH_A; x -= 0.6) frontWall.push(iso(x, HALF_W, archZ(x)));
+  P.shape(frontWall, PAL.STONE, { shade: 0.08, lw: 1.0 });
+
+  // 4. Stepped stone deck & low parapets
+  const deck = [];
+  for (let x = -DECK_END; x <= DECK_END; x += 0.6) deck.push(iso(x, -HALF_W, deckZ(x)));
+  for (let x = DECK_END; x >= -DECK_END; x -= 0.6) deck.push(iso(x, HALF_W, deckZ(x)));
+  P.shape(deck, PAL.STONE, { lw: 0.9 });
+  // Front parapet
+  const para = [];
+  for (let x = -DECK_END; x <= DECK_END; x += 0.6) para.push(iso(x, HALF_W, deckZ(x) + PARAPET));
+  for (let x = DECK_END; x >= -DECK_END; x -= 0.6) para.push(iso(x, HALF_W, deckZ(x)));
+  P.shape(para, PAL.STONE_DK, { lw: 0.85 });
+
+  // Cypress / Mediterranean trees on the rocky banks
+  for (const [tx, ty] of [[-8.6, 5.8], [8.5, 6.2], [-8.8, -5.8], [8.6, -5.6]]) {
+    const [cx, cy] = iso(tx, ty, 1.8);
+    P.line([iso(tx, ty, 0), iso(tx, ty, 1.4)], 2.2, 'blue', false, 0.15);
+    P.blob(cx, cy, 16, PAL.GREEN);
+    P.blob(cx + 8, cy + 4, 12, PAL.LEAF);
+  }
+}
+
+function drawLive(P, t) {
+  // Shimmering emerald river ripples
+  for (let k = 0; k < 7; k++) {
+    const ry = ((t * 1.4 + k * 2.5) % 16) - 8;
+    const rx = -4.2 + (k % 4) * 2.6;
+    P.chalk([iso(rx, ry, 0.04), iso(rx, ry + 0.9, 0.04)], 1.2);
+  }
+
+  // Cheering tourists standing along the peaked bridge deck
+  for (const tr of tourists) {
+    const [tx, ty] = iso(tr.x, tr.y, deckZ(tr.x));
+    const cheer = G.cheer > 0;
+    const hop = cheer ? Math.abs(Math.sin(t * 11 + tr.phase)) * 4 : 0;
+    P.dot(tx, ty, 5, 'blue', 0.2, 0.4);
+    P.line([[tx - 1.5, ty - hop], [tx - 1.5, ty - 7 - hop]], 2, 'blue', false, 0.1);
+    P.line([[tx + 1.5, ty - hop], [tx + 1.5, ty - 7 - hop]], 2, 'blue', false, 0.1);
+    P.shape([[tx - 3.5, ty - 7 - hop], [tx + 3.5, ty - 7 - hop], [tx + 3, ty - 14 - hop], [tx - 3, ty - 14 - hop]], tr.shirt, { lw: 0.7 });
+    P.shape(circle(tx, ty - 17.5 - hop, 3.2, 10), PAL.SKIN, { lw: 0.7 });
+    if (cheer) {
+      P.line([[tx - 3, ty - 13 - hop], [tx - 6, ty - 20 - hop]], 1.6, 'blue', false, 0.1);
+      P.line([[tx + 3, ty - 13 - hop], [tx + 6, ty - 20 - hop]], 1.6, 'blue', false, 0.1);
+    }
+  }
+
+  // Water splash rings
+  for (const r of splash.rings) {
+    const [rx, ry] = iso(r.x, r.y, 0.05);
+    ctx.save();
+    ctx.globalAlpha = clamp(r.life, 0, 1);
+    P.chalk(ellipse(rx, ry, r.r * 13, r.r * 6.5, 16), 1.6, true);
+    ctx.restore();
+  }
+
+  // The Diver!
+  if (G.phase !== 'under' && G.phase !== 'over') {
+    const [dx, dy] = iso(G.x, G.y, G.z);
+    // Shadow on water below
+    const [sx, sy] = iso(G.x, G.y, 0.04);
+    P.dot(sx, sy, clamp(7 * (1 - G.z / 18), 2.5, 7), 'blue', 0.24, 0.45);
+
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.rotate(G.pitch);
+    const crouch = G.phase === 'charge' ? G.power * 6 : 0;
+    const tuck = G.tuck;
+    // Tuck brings knees & arms into a tight ball for rapid flipping!
+    if (tuck > 0.4) {
+      P.shape(circle(0, 0, 7.5, 14), PAL.SKIN, { lw: 0.85 });
+      P.shape(circle(-2, 2, 4.5, 10), PAL.RED, { lw: 0.6 });
+      P.shape(circle(3, -5, 4.2, 10), PAL.SKIN, { lw: 0.75 });
+      P.dot(3.5, -7, 3.5, 'blue', 0.9);
+    } else {
+      // Extended diving posture (legs, red trunks, torso, head, outstretched arms)
+      P.limb(-1.8, 2, -2.2, 14 - crouch, 2.0, 1.3, PAL.SKIN);
+      P.limb(1.8, 2, 2.2, 14 - crouch, 2.0, 1.3, PAL.SKIN);
+      P.shape([[-3.8, -1], [3.8, -1], [3.4, 5], [-3.4, 5]], PAL.RED, { lw: 0.7 });
+      P.shape([[-4.2, -1], [4.2, -1], [4.8, -11 + crouch * 0.4], [-4.8, -11 + crouch * 0.4]], PAL.SKIN, { lw: 0.8 });
+      P.shape(circle(0, -15.5 + crouch * 0.4, 4.0, 12), PAL.SKIN, { lw: 0.75 });
+      P.dot(0, -17.5 + crouch * 0.4, 3.6, 'blue', 0.9);
+      const armUp = G.phase === 'air' ? -12 : (G.phase === 'charge' ? 5 : -2);
+      P.limb(-4.4, -10 + crouch * 0.4, -8, -10 + armUp, 1.6, 1.1, PAL.SKIN);
+      P.limb(4.4, -10 + crouch * 0.4, 8, -10 + armUp, 1.6, 1.1, PAL.SKIN);
+    }
+    ctx.restore();
+
+    // Charge power arc beside diver when crouching
+    if (G.phase === 'charge' && G.power > 0.02) {
+      const barH = G.power * 34;
+      P.line([[dx + 18, dy + 14], [dx + 18, dy + 14 - barH]], 3.2, 'coral', false, 0.1);
+    }
+  }
+
+  // Splash droplets flying upward
+  for (const d of splash.drops) {
+    const [px, py] = iso(d.x, d.y, d.z);
+    P.chalk([[px - 1, py], [px + 1, py - 2]], 2.2);
+  }
+}
+
+/* ---------- Viewport, cache & loop ---------- */
+
+const corners = [];
+for (const x of [-14.8, 14.8]) for (const y of [-9.2, 9.2]) for (const z of [-0.6, 13.5]) corners.push(iso(x, y, z));
+const X0 = Math.min(...corners.map(p => p[0])) - 16, X1 = Math.max(...corners.map(p => p[0])) + 16;
+const Y0 = Math.min(...corners.map(p => p[1])) - 16, Y1 = Math.max(...corners.map(p => p[1])) + 16;
+const BW = X1 - X0, BH = Y1 - Y0;
+
+let scale = 1, ox = 0, oy = 0, baseCache = new Map();
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function fit() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(Math.max(1, window.innerWidth) * dpr);
+  canvas.height = Math.round(Math.max(1, window.innerHeight) * dpr);
+  scale = Math.min(canvas.width / BW, canvas.height / BH) * 0.96;
+  ox = (canvas.width - BW * scale) / 2 - X0 * scale;
+  oy = (canvas.height - BH * scale) / 2 - Y0 * scale;
+  baseCache = new Map();
+}
+function getBase(boil) {
+  let cv = baseCache.get(boil);
+  if (cv) return cv;
+  cv = document.createElement('canvas');
+  cv.width = canvas.width; cv.height = canvas.height;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+  c.setTransform(scale, 0, 0, scale, ox, oy);
+  drawBase(createPen(c, hash('sm', boil), createPatternCache(c)), rand(hash('sm', 'layout')));
+  baseCache.set(boil, cv);
+  return cv;
+}
+function draw() {
+  const boil = reducedMotion ? 0 : Math.floor(G.time * 4) % 3;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(getBase(boil), 0, 0);
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+  drawLive(createPen(ctx, hash('sm', 'live', boil), patCache), G.time);
+  applyNight(ctx, canvas.width, canvas.height);
+}
+
+/* ---------- Input & Sound ---------- */
+canvas.addEventListener('pointerdown', e => { canvas.focus({ preventScroll: true }); canvas.setPointerCapture(e.pointerId); press(); });
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) press(); } });
+canvas.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') release(); });
+
+let audio = null, muted = false, noiseBuf = null;
+function ensureAudio() {
+  if (audio) { if (audio.state === 'suspended') audio.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  audio = new AC();
+  noiseBuf = audio.createBuffer(1, audio.sampleRate / 2, audio.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function sound(kind, amt = 0.6) {
+  if (!audio || muted) return;
+  const now = audio.currentTime;
+  if (kind === 'splash' || kind === 'cheer') {
+    const src = audio.createBufferSource(), g = audio.createGain(), f = audio.createBiquadFilter();
+    src.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = kind === 'splash' ? 700 + amt * 400 : 1800;
+    g.gain.setValueAtTime(0.18 * amt + 0.04, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    src.connect(f).connect(g).connect(audio.destination); src.start(now); src.stop(now + 0.3);
+    return;
+  }
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(220, now); o.frequency.exponentialRampToValueAtTime(420, now + 0.09);
+  g.gain.setValueAtTime(0.14, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  o.connect(g).connect(audio.destination); o.start(now); o.stop(now + 0.11);
+}
+const muteBtn = document.getElementById('mute');
+muteBtn.addEventListener('click', () => { muted = !muted; muteBtn.textContent = muted ? 'sound off' : 'sound on'; muteBtn.setAttribute('aria-pressed', String(muted)); });
+
+addEventListener('resize', fit);
+fit();
+ready();
+let last = performance.now();
+function frame(now) { update(Math.min(0.04, (now - last) / 1000)); last = now; draw(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

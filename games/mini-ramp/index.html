@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mini Ramp</title>
+<style>
+  :root { --ink: #23272a; --muted: #6b7b8e; --paper: #fff; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--paper); color: var(--ink); }
+  body { font: 13px/1.35 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: pointer; outline: none; }
+  .hud { position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); display: flex; justify-content: space-between; gap: 16px; pointer-events: none; }
+  #scores { position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); display: grid; gap: 2px; pointer-events: none; }
+  #scores b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: #2e4682; }
+  #scores span { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #bottom { bottom: max(14px, env(safe-area-inset-bottom)); align-items: flex-end; }
+  #status { color: var(--muted); }
+  button { pointer-events: auto; font: inherit; color: var(--muted); background: none; border: 0; padding: 10px; margin: -10px; cursor: pointer; }
+  button:hover, button:focus-visible { color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" tabindex="0" aria-label="Wooden skateboard mini-ramp. Hold on the way down to pump, release going up, hold in the air to grab the board."></canvas></div>
+<div id="scores">
+  <b id="score">0</b>
+  <span id="meta">60s</span>
+</div>
+<div class="hud" id="bottom">
+  <div id="status" role="status" aria-live="polite"></div>
+  <button id="mute" type="button" aria-pressed="false">sound on</button>
+</div>
+<script src="../shell.js"></script>
+<script>
+PixelPlays.mount({
+  id: 'mini-ramp',
+  rules: [
+    'Pump like on a swing: hold on the way down, let go on the way up. Use a finger, the mouse or space. If you lose speed, a few pumps bring it back.',
+    'Enough speed takes you over the coping into the air. Higher air scores more.',
+    'In the air, hold to grab the board for extra points. Let go before you land, or you slam.',
+    'Each clean grab raises the multiplier up to x5. A slam resets it. You have 60 seconds.',
+  ],
+});
+</script>
+<script src="../riso.js"></script>
+<script>
+'use strict';
+
+const { PAL, TAU, clamp, lerp, hash, rand, ellipse, circle, createPatternCache, createPen, applyNight } = RisoKit;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+const patCache = createPatternCache(ctx);
+
+// Ramp coordinates: `a` runs left-right along ramp, `w` runs toward camera, `z` is up
+const SX = 21, SY = 10.5, SZ = 22;
+const proj = (a, w, z = 0) => [a * SX - w * 4.5, w * SY - z * SZ];
+
+const FLAT = 3.6, RADIUS = 4.4, LIP_A = FLAT + RADIUS, DECK_A = 10.6, RAMP_W = 4.2;
+const ARC = RADIUS * Math.PI / 2, LIP_S = FLAT + ARC;
+const GRAVITY = 12, PUMP = 6, LOW_BOOST = 2.6, ROLL_DRAG = 0.2, AIR_DRAG = 0.0042, MIN_FLAT_SPEED = 5;
+const MAX_AIR_SPEED = 12.5, LIP_INSET = 0.3, GAME_LENGTH = 60, MAX_MULTI = 5, GRAB_MIN = 0.2;
+const HINT_AFTER = 2.5, BEST_KEY = 'pixel-plays-mini-ramp-best';
+
+function pointOnRamp(s) {
+  const n = Math.abs(s), sign = s < 0 ? -1 : 1;
+  if (n <= FLAT) return { a: s, z: 0, th: 0 };
+  if (n >= LIP_S) return { a: sign * LIP_A + (s - sign * LIP_S), z: RADIUS, th: 0 };
+  const t = (n - FLAT) / RADIUS;
+  return { a: sign * (FLAT + RADIUS * Math.sin(t)), z: RADIUS * (1 - Math.cos(t)), th: sign * t };
+}
+function surfaceAt(a) {
+  const n = Math.abs(a);
+  if (n <= FLAT || n >= DECK_A) return 0;
+  if (n >= LIP_A) return RADIUS;
+  const d = n - FLAT;
+  return RADIUS - Math.sqrt(Math.max(0, RADIUS * RADIUS - d * d));
+}
+
+/* ---------- Game state (authentic Mini Ramp mechanics, MIT) ---------- */
+const G = {
+  phase: 'ready', s: LIP_S, v: 0, air: false, airSign: 1, z: RADIUS, vz: 0, airT: 0, airTotal: 0,
+  hold: false, holdT: 0, grabT: 0, score: 0, multi: 1, airs: 0, left: GAME_LENGTH,
+  timer: 0, time: 0, cheer: 0, slam: null, bestAir: 0, sinceAir: 0, status: '',
+  best: (() => { try { return +localStorage.getItem(BEST_KEY) || 0; } catch { return 0; } })(),
+};
+const nodes = { score: document.getElementById('score'), meta: document.getElementById('meta'), status: document.getElementById('status') };
+function setStatus(text) { if (text !== G.status) { G.status = text; nodes.status.textContent = text; } }
+function renderHud() {
+  nodes.score.textContent = G.score;
+  nodes.meta.textContent = Math.ceil(G.left) + 's' + (G.multi > 1 ? ' · x' + G.multi : '');
+}
+function resetGame() {
+  Object.assign(G, { phase: 'ready', s: LIP_S, v: 0, air: false, z: RADIUS, hold: false, score: 0, multi: 1, airs: 0, left: GAME_LENGTH, timer: 0, slam: null, bestAir: 0, sinceAir: 0 });
+  setStatus('tap to drop in');
+  renderHud();
+}
+function dropIn() { G.phase = 'ride'; G.s = LIP_S - 0.05; G.v = -0.6; sound('clack', 0.5); }
+function press() {
+  ensureAudio();
+  if (G.phase === 'over') { if (G.timer > 0.8) resetGame(); return; }
+  if (G.phase === 'ready') { dropIn(); return; }
+  G.hold = true; G.holdT = 0;
+}
+function release() { G.hold = false; }
+function takeOff(sign) {
+  const speed = Math.min(Math.abs(G.v), MAX_AIR_SPEED);
+  G.air = true; G.airSign = sign; G.vz = speed; G.z = RADIUS; G.airT = 0;
+  G.airTotal = 2 * speed / GRAVITY; G.grabT = 0;
+  sound('clack', 0.8);
+}
+function land() {
+  const height = G.vz * G.vz / (2 * GRAVITY);
+  G.air = false; G.s = G.airSign * LIP_S; G.v = -G.airSign * G.vz * 0.985; G.z = RADIUS;
+  if (G.hold && G.holdT > 0.1) return slam();
+  G.airs++; G.bestAir = Math.max(G.bestAir, height);
+  const grabbed = G.grabT >= GRAB_MIN;
+  const points = Math.round((10 + height * 12 + (grabbed ? G.grabT * 60 : 0)) * G.multi);
+  G.score += points;
+  setStatus('+' + points + (grabbed ? ' · grab ' + G.grabT.toFixed(1) + 's' : ''));
+  if (grabbed) G.multi = Math.min(MAX_MULTI, G.multi + 1);
+  if (height > 3.5) G.cheer = 1.2;
+  sound('land', 0.7);
+  renderHud();
+}
+function slam() {
+  G.phase = 'slam'; G.timer = 0; G.multi = 1;
+  G.slam = { board: { a: pointOnRamp(G.s).a, z: RADIUS, va: -G.airSign * 3, vz: 3.4, spin: 0 } };
+  G.v = -G.airSign * 7;
+  setStatus('slam · let go before landing');
+  sound('slam');
+  renderHud();
+}
+const needsHint = () => G.airs < 2 || G.sinceAir > HINT_AFTER;
+function rollStep(dt) {
+  const th = pointOnRamp(G.s).th, slope = Math.sin(th), dir = Math.sign(G.v) || -Math.sign(G.s) || 1;
+  const low = clamp(1 - (G.v * G.v / 2 + GRAVITY * pointOnRamp(G.s).z) / (GRAVITY * RADIUS * 1.25), 0, 1);
+  G.v -= GRAVITY * slope * dt;
+  if (G.hold) {
+    if (!slope || G.v * slope < 0) G.v += dir * PUMP * (Math.abs(slope) + low * LOW_BOOST) * dt;
+    else G.v -= dir * PUMP * Math.abs(slope) * (1 - low) * 0.5 * dt;
+  }
+  const speed = Math.abs(G.v), next = Math.max(0, speed - (ROLL_DRAG * (1 - low * 0.7) + AIR_DRAG * speed * speed) * dt);
+  if (speed > 0) G.v *= next / speed;
+  if (Math.abs(G.s) <= FLAT && Math.abs(G.v) < MIN_FLAT_SPEED) G.v = (Math.sign(G.v) || 1) * MIN_FLAT_SPEED;
+  G.s += G.v * dt;
+  if (Math.abs(G.s) >= LIP_S && G.v * G.s > 0) { const sign = Math.sign(G.s); G.s = sign * LIP_S; takeOff(sign); }
+}
+function airStep(dt) {
+  G.airT += dt;
+  G.z = RADIUS + G.vz * G.airT - 0.5 * GRAVITY * G.airT * G.airT;
+  if (G.hold) G.grabT += dt;
+  if (G.airT >= G.airTotal) land();
+}
+function finish() {
+  G.phase = 'over'; G.timer = 0; G.hold = false; G.v = 0;
+  const record = G.score > G.best;
+  if (record) { G.best = G.score; try { localStorage.setItem(BEST_KEY, String(G.best)); } catch {} }
+  setStatus(G.score + (record ? ' · new best' : '') + ' · highest air ' + G.bestAir.toFixed(1) + ' m · tap to skate again');
+  renderHud();
+}
+function update(dt) {
+  G.time += dt; G.timer += dt; G.cheer = Math.max(0, G.cheer - dt);
+  if (G.hold) G.holdT += dt;
+  if (G.phase === 'ride' || G.phase === 'slam') {
+    G.left = Math.max(0, G.left - dt);
+    if (Math.ceil(G.left) !== Math.ceil(G.left + dt)) renderHud();
+  }
+  if (G.phase === 'ride') {
+    if (G.air) { airStep(dt); G.sinceAir = 0; }
+    else {
+      rollStep(dt); G.sinceAir += dt;
+      if (needsHint()) { const slope = Math.sin(pointOnRamp(G.s).th); if (slope) setStatus(G.v * slope < 0 ? 'hold on the way down' : 'let go on the way up'); }
+    }
+    if (G.left <= 0 && !G.air) finish();
+  } else if (G.phase === 'slam') {
+    const b = G.slam.board;
+    b.a += b.va * dt; b.vz -= GRAVITY * dt; b.z += b.vz * dt; b.spin += dt * 11;
+    const fl = surfaceAt(b.a);
+    if (b.z < fl) { b.z = fl; b.vz = Math.abs(b.vz) > 2 ? -b.vz * 0.4 : 0; b.va *= 0.7; b.spin *= 0.9; }
+    rollStep(dt);
+    if (Math.abs(G.s) < LIP_S - 0.1 && G.hold) G.hold = false;
+    if (G.timer > 1.25) { G.phase = 'ride'; G.slam = null; G.v = (Math.sign(G.v) || 1) * Math.max(Math.abs(G.v), 8); G.sinceAir = 0; if (G.left <= 0) finish(); }
+  }
+}
+
+/* ---------- Risograph Half-Pipe & Palm Drawing ---------- */
+
+function drawPalm(P, a, w, s) {
+  const [bx, by] = proj(a, w, 0);
+  const [tx, ty] = proj(a + 0.5 * s, w, 6.2 * s);
+  P.line([[bx, by], [lerp(bx, tx, 0.5) - 6 * s, lerp(by, ty, 0.5)], [tx, ty]], 4.5 * s, 'coral', false, 0.2);
+  P.line([[bx, by], [lerp(bx, tx, 0.5) - 6 * s, lerp(by, ty, 0.5)], [tx, ty]], 1.4, 'blue', false, 0.2);
+  for (let k = 0; k < 6; k++) {
+    const ang = -Math.PI + (k / 5) * Math.PI * 1.4 - 0.2;
+    const L = (24 + (k % 2) * 8) * s;
+    const ex = tx + Math.cos(ang) * L, ey = ty + Math.sin(ang) * L * 0.65 + 10 * s;
+    const mx = (tx + ex) * 0.5, my = (ty + ey) * 0.5 - 8 * s;
+    P.shape([[tx, ty], [mx - 3, my - 4], [ex, ey], [mx + 3, my + 3]], k % 2 ? PAL.GREEN : PAL.LEAF, { lw: 0.7 });
+  }
+}
+
+function drawBase(P) {
+  // Lawn border & concrete skatepad slab
+  P.shape([proj(-15, -8, 0), proj(15, -8, 0), proj(15, 7, 0), proj(-15, 7, 0)], PAL.GREEN, { lw: 0.9 });
+  P.shape([proj(-13, -5.8, 0.02), proj(13, -5.8, 0.02), proj(13, 5.8, 0.02), proj(-13, 5.8, 0.02)], PAL.CONCRETE, { lw: 0.9 });
+  for (let a = -10; a <= 10; a += 4) P.line([proj(a, -5.8, 0.03), proj(a, 5.8, 0.03)], 0.45, 'blue', false, 0.15);
+
+  // Palms behind the ramp
+  for (const [pa, pw, ps] of [[-11, -7.2, 1.0], [-4.5, -7.5, 1.15], [4.5, -7.5, 1.1], [11.5, -7.0, 0.95]]) {
+    drawPalm(P, pa, pw, ps);
+  }
+
+  // Wooden Half-Pipe Mini Ramp!
+  const curvePts = (w) => {
+    const pts = [];
+    pts.push(proj(-DECK_A, w, RADIUS), proj(-LIP_A, w, RADIUS));
+    for (let k = 0; k <= 10; k++) { const t = (1 - k / 10) * Math.PI / 2; pts.push(proj(-FLAT - RADIUS * Math.sin(t), w, RADIUS * (1 - Math.cos(t)))); }
+    for (let k = 0; k <= 10; k++) { const t = (k / 10) * Math.PI / 2; pts.push(proj(FLAT + RADIUS * Math.sin(t), w, RADIUS * (1 - Math.cos(t)))); }
+    pts.push(proj(LIP_A, w, RADIUS), proj(DECK_A, w, RADIUS));
+    return pts;
+  };
+  const backC = curvePts(-RAMP_W);
+  const frontC = curvePts(RAMP_W);
+
+  // Riding surface (plywood ramp deck & curved transition)
+  const surface = backC.concat(frontC.slice().reverse());
+  P.shape(surface, PAL.WOOD, { lw: 0.95 });
+  // Panel seam ribs across the ramp
+  for (const s of [-FLAT, 0, FLAT, -FLAT - ARC * 0.5, FLAT + ARC * 0.5]) {
+    const p = pointOnRamp(s);
+    P.line([proj(p.a, -RAMP_W, p.z), proj(p.a, RAMP_W, p.z)], 0.55, 'blue', false, 0.15);
+  }
+  // Steel coping pipes at both lips!
+  for (const sign of [-1, 1]) {
+    P.line([proj(sign * LIP_A, -RAMP_W, RADIUS), proj(sign * LIP_A, RAMP_W, RADIUS)], 3.2, 'blue', false, 0.12);
+    P.chalk([proj(sign * LIP_A, -RAMP_W, RADIUS + 0.06), proj(sign * LIP_A, RAMP_W, RADIUS + 0.06)], 1.2);
+  }
+  // Front wooden cutaway wall of the ramp
+  const frontWall = frontC.concat([proj(DECK_A, RAMP_W, 0), proj(-DECK_A, RAMP_W, 0)]);
+  P.shape(frontWall, PAL.WOOD_DK, { shade: 0.15, lw: 1.1 });
+  // Right end wall
+  P.shape([proj(DECK_A, -RAMP_W, 0), proj(DECK_A, RAMP_W, 0), proj(DECK_A, RAMP_W, RADIUS), proj(DECK_A, -RAMP_W, RADIUS)], PAL.WOOD_DK, { shade: 0.25, lw: 1.0 });
+}
+
+function drawFriend(P, a, w, shirt, t, cheer) {
+  const [x, y] = proj(a, w, RADIUS);
+  const hop = cheer ? Math.abs(Math.sin(t * 10 + a)) * 5 : 0;
+  P.dot(x, y, 6, 'blue', 0.2, 0.4);
+  P.limb(x - 2, y - 10 - hop, x - 2.5, y - hop, 1.8, 1.3, [['blue', 0.78]]);
+  P.limb(x + 2, y - 10 - hop, x + 2.5, y - hop, 1.8, 1.3, [['blue', 0.78]]);
+  P.shape([[x - 4.5, y - 10 - hop], [x + 4.5, y - 10 - hop], [x + 4, y - 20 - hop], [x - 4, y - 20 - hop]], shirt, { lw: 0.8 });
+  P.shape(circle(x, y - 24 - hop, 3.8, 12), PAL.SKIN, { lw: 0.75 });
+  P.dot(x, y - 26 - hop, 3.5, 'blue', 0.9);
+  if (cheer) {
+    P.line([[x - 4, y - 19 - hop], [x - 8, y - 27 - hop]], 1.8, 'blue', false, 0.1);
+    P.line([[x + 4, y - 19 - hop], [x + 8, y - 27 - hop]], 1.8, 'blue', false, 0.1);
+  }
+}
+
+function drawLive(P, t) {
+  // Friends cheering on the decks
+  drawFriend(P, -9.5, -1.6, [['teal', 0.72]], t, G.cheer > 0);
+  drawFriend(P, 9.5, -1.2, PAL.RED, t, G.cheer > 0);
+
+  // Skater position & angle
+  let f;
+  if (G.air) {
+    const p = G.airT / G.airTotal;
+    f = { a: G.airSign * (LIP_A - LIP_INSET), z: G.z, th: G.airSign * Math.PI / 2 * Math.abs(1 - 2 * p) };
+  } else if (G.phase === 'ready') {
+    f = { a: LIP_A + 0.9, z: RADIUS, th: 0 };
+  } else {
+    f = pointOnRamp(G.s);
+  }
+
+  const [rx, ry] = proj(f.a, 0.2, f.z);
+  const [sx, sy] = proj(f.a, 0.2, surfaceAt(f.a));
+  P.dot(sx, sy, clamp(10 * (1 - (f.z - surfaceAt(f.a)) / 8), 3, 10), 'blue', 0.22, 0.42);
+
+  ctx.save();
+  ctx.translate(rx, ry);
+  ctx.rotate(-f.th);
+
+  if (G.phase === 'slam') {
+    // Tumbled skater on ramp
+    P.shape(ellipse(0, -5, 11, 5, 12), PAL.ORANGE, { lw: 0.85 });
+    P.shape(circle(10, -7, 4, 10), PAL.SKIN, { lw: 0.75 });
+  } else {
+    const crouch = G.hold ? 6.5 : 0;
+    const grab = G.air && G.hold;
+    // Skateboard deck (sun yellow) + wheels
+    P.shape([[-13, -2], [13, -2], [11, 1.5], [-11, 1.5]], [['sun', 0.95]], { lw: 0.9 });
+    P.dot(-7, 2.5, 2.2, 'blue', 0.9);
+    P.dot(7, 2.5, 2.2, 'blue', 0.9);
+    // Skater legs, coral/orange hoodie, dark cap
+    const hipY = -14 + crouch;
+    P.limb(-3, hipY, -6, -2, 2.2, 1.6, [['blue', 0.8]]);
+    P.limb(3, hipY, 6, -2, 2.2, 1.6, [['blue', 0.8]]);
+    P.shape([[-5.5, hipY + 1], [5.5, hipY + 1], [6, hipY - 12], [-6, hipY - 12]], PAL.ORANGE, { lw: 0.85 });
+    P.shape(circle(0, hipY - 16.5, 4.4, 12), PAL.SKIN, { lw: 0.8 });
+    P.shape(ellipse(0, hipY - 19, 5.2, 2.5, 10), [['blue', 0.92]], { lw: 0.6 });
+    // Arms: reaching down to grab the board in mid-air, or outstretched for balance!
+    if (grab) {
+      P.limb(-5, hipY - 10, -4, -1, 1.7, 1.3, PAL.ORANGE);
+      P.limb(5, hipY - 10, 11, hipY - 16, 1.7, 1.3, PAL.ORANGE);
+    } else {
+      P.limb(-5, hipY - 10, -12, hipY - 13, 1.7, 1.3, PAL.ORANGE);
+      P.limb(5, hipY - 10, 12, hipY - 13, 1.7, 1.3, PAL.ORANGE);
+    }
+  }
+  ctx.restore();
+
+  // Flying board during slam
+  if (G.phase === 'slam' && G.slam) {
+    const b = G.slam.board;
+    const [bx, by] = proj(b.a, 0.2, b.z);
+    ctx.save(); ctx.translate(bx, by); ctx.rotate(b.spin);
+    P.shape([[-12, -2], [12, -2], [10, 2], [-10, 2]], [['sun', 0.95]], { lw: 0.9 });
+    ctx.restore();
+  }
+}
+
+/* ---------- Viewport, cache & loop ---------- */
+
+const corners = [];
+for (const a of [-15, 15]) for (const w of [-8.5, 7]) for (const z of [0, 11]) corners.push(proj(a, w, z));
+const X0 = Math.min(...corners.map(p => p[0])) - 14, X1 = Math.max(...corners.map(p => p[0])) + 14;
+const Y0 = Math.min(...corners.map(p => p[1])) - 14, Y1 = Math.max(...corners.map(p => p[1])) + 14;
+const BW = X1 - X0, BH = Y1 - Y0;
+
+let scale = 1, ox = 0, oy = 0, baseCache = new Map();
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function fit() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(Math.max(1, window.innerWidth) * dpr);
+  canvas.height = Math.round(Math.max(1, window.innerHeight) * dpr);
+  scale = Math.min(canvas.width / BW, canvas.height / BH) * 0.96;
+  ox = (canvas.width - BW * scale) / 2 - X0 * scale;
+  oy = (canvas.height - BH * scale) / 2 - Y0 * scale;
+  baseCache = new Map();
+}
+function getBase(boil) {
+  let cv = baseCache.get(boil);
+  if (cv) return cv;
+  cv = document.createElement('canvas');
+  cv.width = canvas.width; cv.height = canvas.height;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+  c.setTransform(scale, 0, 0, scale, ox, oy);
+  drawBase(createPen(c, hash('mr', boil), createPatternCache(c)));
+  baseCache.set(boil, cv);
+  return cv;
+}
+function draw() {
+  const boil = reducedMotion ? 0 : Math.floor(G.time * 4) % 3;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(getBase(boil), 0, 0);
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+  drawLive(createPen(ctx, hash('mr', 'live', boil), patCache), G.time);
+  applyNight(ctx, canvas.width, canvas.height);
+}
+
+canvas.addEventListener('pointerdown', e => { canvas.focus({ preventScroll: true }); canvas.setPointerCapture(e.pointerId); press(); });
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) press(); } });
+canvas.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') release(); });
+
+let audio = null, muted = false;
+function ensureAudio() {
+  if (audio) { if (audio.state === 'suspended') audio.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (AC) audio = new AC();
+}
+function sound(kind, amt = 0.6) {
+  if (!audio || muted) return;
+  const now = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+  const s = { clack: [520, 180, 0.06, 'square'], land: [240, 110, 0.08, 'triangle'], slam: [120, 55, 0.16, 'sawtooth'] }[kind];
+  o.type = s[3]; o.frequency.setValueAtTime(s[0], now); o.frequency.exponentialRampToValueAtTime(s[1], now + s[2]);
+  g.gain.setValueAtTime(0.16 * amt, now); g.gain.exponentialRampToValueAtTime(0.001, now + s[2]);
+  o.connect(g).connect(audio.destination); o.start(now); o.stop(now + s[2] + 0.01);
+}
+const muteBtn = document.getElementById('mute');
+muteBtn.addEventListener('click', () => { muted = !muted; muteBtn.textContent = muted ? 'sound off' : 'sound on'; muteBtn.setAttribute('aria-pressed', String(muted)); });
+
+addEventListener('resize', fit);
+fit();
+resetGame();
+let last = performance.now();
+function frame(now) { update(Math.min(0.04, (now - last) / 1000)); last = now; draw(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
